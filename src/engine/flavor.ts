@@ -12,5 +12,9 @@ export function turnHeadline(turn: number, independent: number, n: number): stri
   if (turn === 1) return '谢顿的计算已经开始。帝国还相信自己永远不会衰落。';
   if (independent / n > 0.5) return '边陲已不再服从川陀。分散的知识网络成为最后的希望。';
   if (turn > 12) return '旧秩序正在退潮。你的选择，将决定黑暗时代有多长。';
-  return ['帝国依旧庞大，却已经无法同时看清每一颗星。', '总督们在等待命令，基地在等待时间。', '一场地方危机结束了；另一条历史路径才刚刚展开。'][turn % 3];
+  return [
+    '帝国依旧庞大，却已经无法同时看清每一颗星。',
+    '总督们在等待命令，基地在等待时间。',
+    '一场地方危机结束了；另一条历史路径才刚刚展开。',
+  ][turn % 3];
 }

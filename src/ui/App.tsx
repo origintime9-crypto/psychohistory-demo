@@ -1,77 +1,421 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { CARDS } from '../engine/cards';
-import { step } from '../engine/dynamics';
-import { describeEvent, turnHeadline } from '../engine/flavor';
-import { revealForecast } from '../engine/forecast';
-import { DEFAULT_PARAMS, TOTAL_TURNS, type Params } from '../engine/params';
-import { Rng, stream } from '../engine/rng';
-import { counts, type Action, type Event, type ForecastResult, type HistoryPoint, type Observation, type Reveal, type State, type World } from '../engine/types';
-import { generateWorld, initialState } from '../engine/worldgen';
+import { DEFAULT_PARAMS, TOTAL_TURNS } from '../engine/params';
+import { score } from '../engine/scoring';
+import { counts } from '../engine/types';
+import { previewStoryChoice, storyEvent } from '../engine/story';
 import CardHand from './CardHand';
 import EndScreen from './EndScreen';
-import EventLog, { type LogEntry } from './EventLog';
+import EventLog from './EventLog';
 import ForecastPanel from './ForecastPanel';
+import { emptyGame, gameReducer, type Game } from './gameReducer';
 import LawOfLargeNumbers from './LawOfLargeNumbers';
+import { GUIDE_KEY, restoreGame, SAVE_KEY, serializeGame } from './saveGame';
 import SetupScreen from './SetupScreen';
 import StarMap from './StarMap';
+import OpeningGuide from './OpeningGuide';
+import MissionPanel from './MissionPanel';
+import StoryEventPanel from './StoryEventPanel';
+import TurnResult from './TurnResult';
 import { useForecast } from './useForecast';
-const percent = (v: number) => `${Math.round(v * 100)}%`;
+
+const percent = (value: number) => `${Math.round(value * 100)}%`;
+const EMPTY_HISTORY: never[] = [];
+function initializeGame(): Game {
+  try {
+    const stored = localStorage.getItem(SAVE_KEY);
+    return stored ? restoreGame(stored) : emptyGame(localStorage.getItem(GUIDE_KEY) === 'done');
+  } catch (error) {
+    return {
+      ...emptyGame(),
+      error: `无法恢复存档：${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 export default function App() {
-  const [world, setWorld] = useState<World | null>(null), [state, setState] = useState<State | null>(null);
-  const [params, setParams] = useState<Params>({ ...DEFAULT_PARAMS }), [action, setAction] = useState<Action>({ card: 'noop' });
-  const [sector, setSector] = useState<number | undefined>(), [view, setView] = useState<'empire' | 'law'>('empire');
-  const [history, setHistory] = useState<HistoryPoint[]>([]), [reveals, setReveals] = useState<Reveal[]>([]), [observations, setObservations] = useState<Observation[]>([]), [logs, setLogs] = useState<LogEntry[]>([]);
-  const [events, setEvents] = useState<Event[]>([]), [revealing, setRevealing] = useState(false), [reveal, setReveal] = useState<Reveal | null>(null), [revealedForecast, setRevealedForecast] = useState<ForecastResult | null>(null);
-  const [ended, setEnded] = useState(false), [contagion, setContagion] = useState(true), [shock, setShock] = useState(true), [setupError, setSetupError] = useState<string | null>(null);
-  const [finalContext, setFinalContext] = useState<{ state: State; action: Action } | null>(null);
-  const [actionHistory, setActionHistory] = useState<Action[]>([]);
-  const reality = useRef<Rng | null>(null), calibration = useRef<Rng | null>(null); const guard = useRef(false); const animationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const contrastParams = useMemo(() => ({ ...params, contagion, commonShock: shock, fiscalFeedback: contagion || shock }), [params, contagion, shock]);
-  const prediction = useForecast(world, state?.turn === TOTAL_TURNS && finalContext ? finalContext.state : state, state?.turn === TOTAL_TURNS && finalContext ? finalContext.action : action, params, contrastParams);
-  const start = (seed: string, n: number, mule: boolean) => {
+  const [game, dispatch] = useReducer(gameReducer, undefined, initializeGame);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const session = game.session;
+  const world = session?.world ?? null,
+    state = session?.state ?? null;
+  const params = session?.params ?? DEFAULT_PARAMS;
+  const currentEvent = useMemo(
+    () => (world && state ? storyEvent(world, state, params) : null),
+    [world, state, params],
+  );
+  const decisionState = useMemo(
+    () =>
+      world && state
+        ? previewStoryChoice(world, state, currentEvent, game.action.eventChoice)
+        : null,
+    [world, state, currentEvent, game.action.eventChoice],
+  );
+  const finished = state?.turn === TOTAL_TURNS;
+  const context = finished ? session?.finalContext : null;
+  const history = useMemo(
+    () => (context ? session!.history.slice(0, -1) : (session?.history ?? EMPTY_HISTORY)),
+    [session?.history, context],
+  );
+  const contrastParams = useMemo(
+    () => ({
+      ...params,
+      contagion: game.contagion,
+      commonShock: game.commonShock,
+      fiscalFeedback: game.contagion || game.commonShock,
+      storyEvents: (game.contagion || game.commonShock) && params.storyEvents,
+    }),
+    [params, game.contagion, game.commonShock],
+  );
+  const prediction = useForecast(
+    world,
+    context?.state ?? state,
+    context?.action ?? game.action,
+    params,
+    contrastParams,
+    history,
+  );
+  const revealing = game.status === 'revealing';
+
+  useEffect(() => {
+    if (!revealing) return;
+    const timer = setTimeout(() => dispatch({ type: 'FINISH_REVEAL' }), 1250);
+    return () => clearTimeout(timer);
+  }, [revealing]);
+
+  useEffect(() => {
+    if (!game.reveal || game.view !== 'empire') return;
+    const timer = setTimeout(
+      () =>
+        document.querySelector('.turn-result')?.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? 'instant'
+            : 'smooth',
+          block: 'start',
+        }),
+      70,
+    );
+    return () => clearTimeout(timer);
+  }, [game.reveal?.turn]);
+
+  useEffect(() => {
     try {
-      const w = generateWorld(seed, { n }); if (animationTimer.current) clearTimeout(animationTimer.current);
-      setWorld(w); setState(initialState(w)); setParams({ ...DEFAULT_PARAMS, mule }); reality.current = stream(seed, 'reality'); calibration.current = stream(seed, 'calibration');
-      setHistory([]); setReveals([]); setObservations([]); setLogs([]); setEvents([]); setSector(undefined); setAction({ card: 'noop' }); setView('empire'); setReveal(null); setRevealedForecast(null); setRevealing(false); setEnded(false); setFinalContext(null); setActionHistory([]); setContagion(true); setShock(true); setSetupError(null); guard.current = false;
-    } catch (e) { setSetupError(e instanceof Error ? e.message : String(e)); }
-  };
-  if (!world || !state) return <>{setupError && <div className="error-banner">{setupError}</div>}<SetupScreen onStart={start} /></>;
-  const c = counts(state), finished = state.turn >= TOTAL_TURNS;
-  const selectAction = (next: Action) => { if (guard.current || finished) return; setAction(next); setReveal(null); setRevealedForecast(null); if (CARDS[next.card].targeted && next.target === undefined) document.querySelector('.map-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
-  const selectSector = (i: number) => { setSector(i); if (CARDS[action.card].targeted && state.phase[i] !== 3) selectAction({ ...action, target: i }); };
+      const saved = serializeGame(game);
+      if (saved) localStorage.setItem(SAVE_KEY, saved);
+      else if (!game.error) localStorage.removeItem(SAVE_KEY);
+      if (game.tutorialDone) localStorage.setItem(GUIDE_KEY, 'done');
+      setStorageError(null);
+    } catch {
+      setStorageError('浏览器无法保存进度。本次仍可游玩，但刷新后可能无法续玩。');
+    }
+  }, [session?.actions, game.tutorialStep, game.tutorialDone, game.error, game.action.eventChoice]);
+
+  if (!session || !world || !state)
+    return (
+      <>
+        {game.error && <div className="error-banner">{game.error}</div>}
+        <SetupScreen onStart={(seed, n, mule) => dispatch({ type: 'START', seed, n, mule })} />
+      </>
+    );
+
+  if (game.status === 'ended')
+    return (
+      <EndScreen
+        world={world}
+        state={state}
+        history={session.history}
+        reveals={session.reveals}
+        observations={session.observations}
+        actions={session.actions}
+        params={params}
+        onRestart={() => dispatch({ type: 'RESET' })}
+        onReview={() => dispatch({ type: 'REVIEW' })}
+      />
+    );
+
+  if (game.view === 'briefing')
+    return (
+      <OpeningGuide
+        world={world}
+        lesson={game.tutorialStep ?? 0}
+        onNext={() => dispatch({ type: 'TUTORIAL_NEXT' })}
+        onSkip={() => dispatch({ type: 'TUTORIAL_DISMISS' })}
+      />
+    );
+
+  const c = counts(state);
+  const displayForecast = game.reveal
+    ? game.revealedForecast
+    : (prediction.active ?? prediction.baseline);
+  const projection = prediction.active?.projection ?? prediction.baseline?.projection;
+  const currentScore = score(
+    state.foundation,
+    session.history.length ? session.history : [{ stable: c.stable / world.n }],
+  );
   const advance = () => {
-    const f = prediction.active; if (!f || prediction.previewBusy || prediction.baselineBusy || guard.current || finished) return;
-    guard.current = true;
-    try {
-      const result = step(world, state, action, reality.current!, params), next = result.state, c = counts(next);
-      setActionHistory(prev => [...prev, { ...action }]);
-      if (next.turn === TOTAL_TURNS) setFinalContext({ state, action });
-      const r = revealForecast(f, c.crisis, next.turn, calibration.current!);
-      setRevealedForecast(f); setReveal(r); setReveals(prev => [...prev, r]);
-      setObservations(prev => [...prev, ...f.probabilities.map((probability, i) => ({ probability, outcome: next.phase[i] === 1 || next.phase[i] === 2 ? 1 : 0 }))]);
-      setHistory(prev => [...prev, { turn: next.turn, crisis: c.crisis, stable: c.stable / world.n, independent: c.independent / world.n, foundation: next.foundation }]);
-      const newLogs: LogEntry[] = [{ turn: next.turn, text: `${CARDS[action.card].name}${action.target !== undefined && CARDS[action.card].targeted ? ` · ${world.names[action.target]}` : ''}。${turnHeadline(next.turn, c.independent, world.n)}` }];
-      if (params.mule && state.turn === 9) newLogs.push({ turn: next.turn, text: '“骡”出现了。一次共同冲击同时改变了许多世界的风险。', tone: 'warn' });
-      if (result.shock > .65) newLogs.push({ turn: next.turn, text: '继位危机震动川陀，所有星区面临共同压力。', tone: 'warn' });
-      if (result.reformFailed) newLogs.push({ turn: next.turn, text: '行政改革失败。被排除的精英形成新的派系。', tone: 'warn' });
-      for (const e of result.events) newLogs.push({ turn: next.turn, text: describeEvent(world, e), tone: e.to === 3 || e.to === 2 ? 'warn' : e.to === 0 ? 'good' : 'normal' });
-      if (!result.events.length) newLogs.push({ turn: next.turn, text: '这十年没有星区改变状态。暗流仍在积累。' });
-      setLogs(prev => [...prev, ...newLogs]); setEvents(result.events); setRevealing(true); setState(next); setAction({ card: 'noop' });
-      animationTimer.current = setTimeout(() => { setRevealing(false); guard.current = false; if (next.turn === TOTAL_TURNS) setEnded(true); }, 600);
-    } catch (e) { guard.current = false; setLogs(prev => [...prev, { turn: state.turn, text: e instanceof Error ? e.message : String(e), tone: 'warn' }]); }
+    if (
+      !prediction.active ||
+      prediction.previewBusy ||
+      prediction.baselineBusy ||
+      revealing ||
+      finished ||
+      prediction.error ||
+      (currentEvent && !game.action.eventChoice)
+    )
+      return;
+    dispatch({ type: 'ADVANCE', turn: state.turn, forecast: prediction.active });
   };
-  if (ended) return <EndScreen world={world} state={state} history={history} reveals={reveals} observations={observations} actions={actionHistory} params={params} onRestart={() => { setWorld(null); setState(null); }} onReview={() => { setEnded(false); setView('law'); }} />;
-  const displayForecast = reveal ? revealedForecast : prediction.active ?? prediction.baseline;
-  return <div className="app-shell">
-    <header className="app-header"><div className="brand"><span>✧</span><div><b>心理史学</b><small>谢顿计划 / 银河推演</small></div></div><nav aria-label="主视图"><button className={view === 'empire' ? 'active' : ''} onClick={() => setView('empire')}>帝国态势</button><button className={view === 'law' ? 'active' : ''} onClick={() => setView('law')}>大数定律</button></nav><div className="header-right"><span className="world-seed" title={`世界种子 ${world.seed}`}>{world.seed}</span><button className="text-button" onClick={() => { if (animationTimer.current) clearTimeout(animationTimer.current); setWorld(null); setState(null); guard.current = false; }}>新推演 ↗</button></div></header>
-    <main className="dashboard"><div className="turn-heading"><div><div className="eyebrow">银河纪元 {12067 + state.turn * 10} · {world.n} 个星区</div><h1>{finished ? '一百八十年，已成为历史。' : '个体的命运未知。群星的趋势可见。'}</h1></div><div className="turn-counter"><span>第 <b>{Math.min(state.turn + 1, 18).toString().padStart(2, '0')}</b> / 18 回合</span><small>{finished ? '推演完成' : `已过去 ${state.turn * 10} 年`}</small></div></div>
-      <div className="stats-strip"><div><span>稳定星区</span><b className="mint">{c.stable}<small> / {world.n}</small></b><em>{percent(c.stable / world.n)}</em></div><div><span>活跃危机</span><b className="rose">{c.crisis}<small> 星区</small></b><em>动荡 {c.unrest} · 叛乱 {c.rebellion}</em></div><div><span>已独立</span><b>{c.independent}<small> 星区</small></b><em>不可逆</em></div><div><span>国库 / 治理</span><b>{percent(state.treasury)}<small> / {percent(state.governance)}</small></b><em>税率 {percent(state.tax)}</em></div><div><span>基地进度</span><b className="gold">{percent(state.foundation)}</b><div className="tiny-progress"><i style={{ width: percent(state.foundation) }} /></div></div><div className="influence-stat"><span>你的影响力</span><b>{state.influence}<small> / 8</small></b><div className="influence-dots">{Array.from({ length: 8 }, (_, i) => <i className={i < state.influence ? 'filled' : ''} key={i} />)}</div></div></div>
-      {prediction.error && <div className="error-banner">预测暂不可用：{prediction.error}</div>}
-      {view === 'empire' ? <><div className="empire-grid"><StarMap world={world} state={state} probabilities={(prediction.active ?? prediction.baseline)?.probabilities} selected={sector} targeting={CARDS[action.card].targeted && !finished} onSelect={selectSector} events={events} revealing={revealing} /><ForecastPanel forecast={displayForecast} history={history} turn={reveal ? reveal.turn - 1 : state.turn} reveal={reveal} /></div>
-        {reveal && <div className="reveal-banner" aria-live="polite"><span className="gold">第 {reveal.turn * 10} 年已揭晓</span><span>实际 {reveal.actual} 个危机星区，预测区间 {reveal.lo90}–{reveal.hi90}。</span><button className="text-button" onClick={() => { setReveal(null); setRevealedForecast(null); }}>查看下一回合预测 →</button></div>}
-        {!finished ? <CardHand world={world} state={state} action={action} onSelect={selectAction} comparison={prediction.comparison} busy={prediction.previewBusy || prediction.baselineBusy || revealing} ready={!!prediction.active && !revealing} elapsed={prediction.elapsed} error={prediction.error} onAdvance={advance} selectedSector={sector} /> : <div className="finished-bar"><span>180 年推演完成，基地与帝国的历史已保存于本次会话。</span><button className="primary" onClick={() => setEnded(true)}>查看终局报告 →</button></div>}
-        <EventLog entries={logs} reveals={reveals} /></> : <LawOfLargeNumbers forecast={prediction.baseline ?? revealedForecast} contrast={prediction.contrast} contrastBusy={prediction.contrastBusy} contagion={contagion} shock={shock} onToggle={(channel, value) => channel === 'contagion' ? setContagion(value) : setShock(value)} observations={observations} reveals={reveals} />}
-      <footer className="app-footer"><span>心理史学实验 · 合成世界 · 预测模型与生成模型相同</span><span>一次十年。十八次选择。</span></footer>
-    </main>
-  </div>;
+
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="brand">
+          <span>✧</span>
+          <div>
+            <b>心理史学</b>
+            <small>谢顿计划 / 银河推演</small>
+          </div>
+        </div>
+        <nav aria-label="主视图">
+          <button
+            className={game.view === 'empire' ? 'active' : ''}
+            onClick={() => dispatch({ type: 'VIEW', view: 'empire' })}
+          >
+            帝国态势
+          </button>
+          <button
+            className={game.view === 'law' ? 'active' : ''}
+            onClick={() => dispatch({ type: 'VIEW', view: 'law' })}
+          >
+            大数定律
+          </button>
+        </nav>
+        <div className="header-right">
+          <button className="text-button" onClick={() => dispatch({ type: 'OPEN_GUIDE' })}>
+            玩法说明
+          </button>
+          <span className="world-seed" title={`世界种子 ${world.seed}`}>
+            {world.seed}
+          </span>
+          <button className="text-button" onClick={() => dispatch({ type: 'RESET' })}>
+            新推演 ↗
+          </button>
+        </div>
+      </header>
+      <main className="dashboard">
+        <div className="turn-heading">
+          <div>
+            <div className="eyebrow">
+              银河纪元 {12067 + state.turn * 10} · {world.n} 个星区
+            </div>
+            <h1>
+              {finished ? `${TOTAL_TURNS * 10} 年，已成为历史。` : '帝国还在。下一步，由你决定。'}
+            </h1>
+          </div>
+          <div className="turn-counter">
+            <span>
+              第{' '}
+              <b>
+                {Math.min(state.turn + 1, TOTAL_TURNS)
+                  .toString()
+                  .padStart(2, '0')}
+              </b>{' '}
+              / {TOTAL_TURNS} 回合
+            </span>
+            <small>{finished ? '推演完成' : `已过去 ${state.turn * 10} 年`}</small>
+          </div>
+        </div>
+        <MissionPanel world={world} state={state} />
+        {game.reveal && session.lastOutcome && (
+          <TurnResult
+            outcome={session.lastOutcome}
+            reveal={game.reveal}
+            onContinue={() => dispatch({ type: 'CLEAR_REVEAL' })}
+          />
+        )}
+        <div className="stats-strip">
+          <div>
+            <span>稳定星区</span>
+            <b className="mint">
+              {c.stable}
+              <small> / {world.n}</small>
+            </b>
+            <em>{percent(c.stable / world.n)}</em>
+          </div>
+          <div>
+            <span>活跃危机</span>
+            <b className="rose">
+              {c.crisis}
+              <small> 星区</small>
+            </b>
+            <em>
+              动荡 {c.unrest} · 叛乱 {c.rebellion}
+            </em>
+          </div>
+          <div>
+            <span>已独立</span>
+            <b>
+              {c.independent}
+              <small> 星区</small>
+            </b>
+            <em>不可逆</em>
+          </div>
+          <div>
+            <span>国库 / 治理</span>
+            <b>
+              {percent(state.treasury)}
+              <small> / {percent(state.governance)}</small>
+            </b>
+            <em>
+              税率 {percent(state.tax)}
+              {state.taxReliefTurns ? ` · 减负剩 ${state.taxReliefTurns} 回合` : ''}
+            </em>
+          </div>
+          <div>
+            <span>基地进度</span>
+            <b className="gold">{percent(state.foundation)}</b>
+            <div className="tiny-progress">
+              <i style={{ width: percent(state.foundation) }} />
+            </div>
+          </div>
+          <div className="influence-stat">
+            <span>你的影响力</span>
+            <b>
+              {state.influence}
+              <small> / 8</small>
+            </b>
+            <div className="influence-dots">
+              {Array.from({ length: 8 }, (_, i) => (
+                <i className={i < state.influence ? 'filled' : ''} key={i} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="outlook-strip" aria-live="polite">
+          <div>
+            <span>当前成果得分</span>
+            <b>{currentScore.Q.toFixed(3)}</b>
+            <small>秩序与知识共同决定成果；维稳也有基础分</small>
+          </div>
+          <div>
+            <span>预估终局黑暗时代</span>
+            <b className="gold">
+              {projection ? Math.round(projection.darkness).toLocaleString('zh-CN') : '…'}
+              <small> 年</small>
+            </b>
+            <small>按当前选择，此后等待并暂缓未来事件；未知冲击未计入</small>
+          </div>
+          <span className="save-status">
+            {storageError ?? `已自动保存 · ${state.turn} / ${TOTAL_TURNS} 回合`}
+          </span>
+        </div>
+        {game.error && <div className="error-banner">{game.error}</div>}
+        {prediction.error && <div className="error-banner">预测暂不可用：{prediction.error}</div>}
+        {game.view === 'empire' ? (
+          <>
+            {currentEvent && !finished && (
+              <StoryEventPanel
+                event={currentEvent}
+                state={state}
+                selected={game.action.eventChoice}
+                disabled={revealing}
+                onSelect={(choice) => dispatch({ type: 'SELECT_EVENT', choice })}
+                onFocus={(sector) => {
+                  dispatch({ type: 'SELECT_SECTOR', sector });
+                  document
+                    .querySelector('.map-panel')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              />
+            )}
+            <div className="empire-grid">
+              <StarMap
+                world={world}
+                state={state}
+                params={params}
+                probabilities={prediction.baseline?.probabilities}
+                selected={game.sector}
+                targeting={CARDS[game.action.card].targeted && !finished}
+                targetEffects={prediction.targets[game.action.card]}
+                onSelect={(sector) => dispatch({ type: 'SELECT_SECTOR', sector })}
+                events={session.events}
+                revealing={revealing || !!game.reveal}
+              />
+              <ForecastPanel
+                forecast={displayForecast}
+                history={session.history}
+                turn={game.reveal ? game.reveal.turn - 1 : state.turn}
+                reveal={game.reveal}
+                mule={game.muleRevealed}
+              />
+            </div>
+            {game.reveal && !session.lastOutcome && (
+              <div
+                className={`reveal-banner ${game.muleRevealed ? 'mule-banner' : ''}`}
+                aria-live="polite"
+              >
+                <span className="gold">
+                  {game.muleRevealed
+                    ? '“骡”出现：模型未知的共同冲击'
+                    : `第 ${game.reveal.turn * 10} 年已揭晓`}
+                </span>
+                <span>
+                  实际 {game.reveal.actual} 个危机星区，事前区间 {game.reveal.lo90}–
+                  {game.reveal.hi90}。
+                  {game.muleRevealed && !game.reveal.covered ? '预测区间被击穿。' : ''}
+                </span>
+                <button className="text-button" onClick={() => dispatch({ type: 'CLEAR_REVEAL' })}>
+                  查看下一回合预测 →
+                </button>
+              </div>
+            )}
+            {!finished ? (
+              <CardHand
+                world={world}
+                state={decisionState!}
+                action={game.action}
+                onSelect={(action) => dispatch({ type: 'SELECT_ACTION', action })}
+                comparison={prediction.comparison}
+                estimates={prediction.hand}
+                handBusy={prediction.handBusy}
+                handError={prediction.handError}
+                busy={prediction.previewBusy || prediction.baselineBusy || revealing}
+                ready={
+                  !!prediction.active && !revealing && (!currentEvent || !!game.action.eventChoice)
+                }
+                eventAwaiting={!!currentEvent && !game.action.eventChoice}
+                elapsed={prediction.elapsed}
+                error={prediction.error}
+                onAdvance={advance}
+                selectedSector={game.sector}
+              />
+            ) : (
+              <div className="finished-bar">
+                <span>{TOTAL_TURNS * 10} 年推演完成，历史已自动存档。</span>
+                <button className="primary" onClick={() => dispatch({ type: 'END' })}>
+                  查看终局报告 →
+                </button>
+              </div>
+            )}
+            <EventLog entries={session.logs} reveals={session.reveals} />
+          </>
+        ) : (
+          <LawOfLargeNumbers
+            forecast={prediction.baseline ?? game.revealedForecast}
+            contrast={prediction.contrast}
+            contrastBusy={prediction.contrastBusy}
+            contagion={game.contagion}
+            shock={game.commonShock}
+            onToggle={(channel, value) => dispatch({ type: 'TOGGLE', channel, value })}
+            observations={session.observations}
+            reveals={session.reveals}
+          />
+        )}
+        <footer className="app-footer">
+          <span>合成世界 · 常规机制已建模 · 未知的“骡”不进入事前预测</span>
+          <span>一次十年。三十次选择，许多条历史。</span>
+        </footer>
+      </main>
+    </div>
+  );
 }

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+output/
+reports/
+docs/
+tmp/
+.playwright-cli/
+src/sim/writeReport.ts
+src/sim/replayExport.ts

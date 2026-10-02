@@ -1,15 +1,18 @@
 {
   "name": "psychohistory-demo",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "format": "prettier --write src tests/engine vite.config.ts tsconfig.json index.html package.json .github .prettierrc.json",
+    "format:check": "prettier --check src tests/engine vite.config.ts tsconfig.json index.html package.json .github .prettierrc.json",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "sim": "tsx src/sim/runBatch.ts",
-    "validate:model": "tsx src/sim/validate.ts"
+    "validate:model": "tsx src/sim/validate.ts",
+    "study:cards": "tsx src/sim/cardStudy.ts"
   },
   "dependencies": {
     "d3-delaunay": "^6.0.4",
@@ -24,6 +27,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "fast-check": "^4.3.0",
+    "prettier": "^3.9.9",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0",

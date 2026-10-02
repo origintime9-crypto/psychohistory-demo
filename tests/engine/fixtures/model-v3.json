@@ -1,0 +1,117 @@
+{
+  "model": "synthetic-v3",
+  "seed": "golden-v3-fixed-seed",
+  "sectors": 50,
+  "parameterSha256": "b38b102022cf82035e53cc355738213698353b074b34d160211933b2374a04f8",
+  "stateAndHistorySha256": "34f083876fde9282ce0e87b965062eb322554885e2b3390847017ffff8d95927",
+  "result": {
+    "Q": 0.35553001147748686,
+    "F": 0.22328462714598404,
+    "F_eff": 0.3009561644313856,
+    "S": 0.42,
+    "darkness": 8953
+  },
+  "actions": [
+    {
+      "card": "religion",
+      "target": 49
+    },
+    {
+      "card": "foundation"
+    },
+    {
+      "card": "elites",
+      "target": 45
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "reform"
+    },
+    {
+      "card": "foundation"
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "religion",
+      "target": 16
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "tax"
+    },
+    {
+      "card": "academy",
+      "target": 13
+    },
+    {
+      "card": "elites",
+      "target": 47
+    },
+    {
+      "card": "religion",
+      "target": 15
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "elites",
+      "target": 7
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "academy",
+      "target": 4
+    },
+    {
+      "card": "foundation"
+    },
+    {
+      "card": "elites",
+      "target": 46
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "religion",
+      "target": 39
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "reform"
+    },
+    {
+      "card": "tax"
+    },
+    {
+      "card": "noop"
+    },
+    {
+      "card": "elites",
+      "target": 19
+    },
+    {
+      "card": "foundation"
+    },
+    {
+      "card": "tax"
+    }
+  ]
+}
