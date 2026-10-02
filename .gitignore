@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.local
+tmp/
+.env
+.env.*
+!.env.example
+.claude/
+.playwright-cli/
+output/
+reports/
+docs/
+/心理史学Demo计划.pdf
+/src/sim/writeReport.ts
+/src/sim/replayExport.ts
+/tests/browser/
