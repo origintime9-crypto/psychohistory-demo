@@ -52,7 +52,7 @@ export function step(
   const applied = applyAction(world, eventState, action, reformDraw, p);
   const s = applied.state;
   const impact = options.captureImpact ? cloneState(s) : undefined;
-  const muleEvent = p.mule && !s.muleOccurred && s.turn + 1 === muleTurn(world.seed);
+  const muleEvent = p.mule && !s.muleOccurred && s.turn + 1 === muleTurn(world.seed, p.campaign);
   const shock =
     (p.commonShock
       ? p.shockSD * shockNormal + (shockDraw < p.shockProbability ? p.shockJump : 0)

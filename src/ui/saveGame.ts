@@ -25,7 +25,7 @@ export function modelFingerprint(params: Params): string {
   return hashSeed(
     JSON.stringify({
       model: MODEL_VERSION,
-      protocol: `weighted-deck-v2/fixed-5+9N/mule-stream-v3/story-v3/score-floor-0.1/turns-${TOTAL_TURNS}`,
+      protocol: `weighted-deck-v2/fixed-5+9N/mule-stream-v3/${params.campaign ? 'story-v4-campaign' : 'story-v3'}/score-floor-0.1/turns-${TOTAL_TURNS}`,
       params,
       cards: CARDS,
     }),
@@ -89,7 +89,9 @@ export function restoreGame(raw: string): Game {
   )
     throw new Error('存档预测记录无效');
   if (
-    Object.keys(s.params).length !== Object.keys(DEFAULT_PARAMS).length ||
+    Object.keys(s.params).length !==
+      Object.keys(DEFAULT_PARAMS).length + (Object.hasOwn(s.params, 'campaign') ? 1 : 0) ||
+    (Object.hasOwn(s.params, 'campaign') && typeof s.params.campaign !== 'boolean') ||
     Object.entries(DEFAULT_PARAMS).some(([key, defaultValue]) => {
       const value = s.params[key as keyof Params];
       return (

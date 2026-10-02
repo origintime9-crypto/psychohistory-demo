@@ -164,51 +164,59 @@ export default function ForecastPanel({
           <b>{point ? `${point.lo90} — ${point.hi90}` : '—'}</b>
         </div>
       </div>
-      <div className="chart-subtitle">
-        <span>未来 {forecast?.H ?? 5} 个十年</span>
-        <div>
-          <i className="band90" />
-          90%
-          <i className="band50" />
-          50%
+      <div className="forecast-plot">
+        <div className="chart-subtitle">
+          <span>未来 {forecast?.H ?? 5} 个十年</span>
+          <div>
+            <i className="band90" />
+            90%
+            <i className="band50" />
+            50%
+          </div>
         </div>
-      </div>
-      {forecast ? (
-        <Chart option={fan} label="未来五回合活跃危机数的期望、50% 与 90% 预测区间" height={204} />
-      ) : (
-        <div className="chart-loading">正在抽样可能的历史…</div>
-      )}
-      <p className="chart-note">
-        按当前回应与命令推演，之后按兵不动、暂缓未来事件。阴影是可能结果的区间；随机事件会改变历史，“骡”未计入。
-      </p>
-      {mule && (
-        <p className="mule-explanation">
-          “骡”已出现。金色实际值与事前预测比较，展示未知共同冲击如何突破聚合预测的边界；事件没有被事先塞进预测区间。
+        {forecast ? (
+          <Chart
+            option={fan}
+            label="未来五回合活跃危机数的期望、50% 与 90% 预测区间"
+            height={204}
+          />
+        ) : (
+          <div className="chart-loading">正在抽样可能的历史…</div>
+        )}
+        <p className="chart-note">
+          按当前回应与命令推演，之后按兵不动、暂缓未来事件。阴影是可能结果的区间；随机事件会改变历史，“骡”未计入。
         </p>
-      )}
-      <div className="section-line" />
-      <div className="chart-subtitle">
-        <span>{reveal ? `第 ${reveal.turn * 10} 年 · 预测与现实` : '下回合 · 危机数分布'}</span>
-        <span>{reveal ? <b className="gold">实际 {reveal.actual}</b> : '合成模拟'}</span>
+        {mule && (
+          <p className="mule-explanation">
+            “骡”已出现。金色实际值与事前预测比较，展示未知共同冲击如何突破聚合预测的边界；事件没有被事先塞进预测区间。
+          </p>
+        )}
       </div>
-      {forecast ? (
-        <Chart option={distribution} label="一步预测的危机数分布及实际结果" height={158} />
-      ) : (
-        <div className="chart-loading small">等待预测</div>
-      )}
-      {reveal && (
-        <div className={`reveal-result ${reveal.covered ? 'covered' : 'outside'}`}>
-          <b>{reveal.covered ? '落在 90% 预测区间内' : '落在 90% 预测区间外'}</b>
-          <span>
-            实际 {reveal.actual} · 期望 {reveal.mean.toFixed(1)} · 第{' '}
-            {Math.round(reveal.percentile * 100)} 百分位
-          </span>
+      <div className="forecast-plot">
+        <div className="section-line" />
+        <div className="chart-subtitle">
+          <span>{reveal ? `第 ${reveal.turn * 10} 年 · 预测与现实` : '下回合 · 危机数分布'}</span>
+          <span>{reveal ? <b className="gold">实际 {reveal.actual}</b> : '合成模拟'}</span>
         </div>
-      )}
-      <p className="chart-note">
-        危机 = 动荡或叛乱；已独立星区单独记录。
-        {history.length ? `已观察 ${history.length} 个十年。` : '历史还未展开。'}
-      </p>
+        {forecast ? (
+          <Chart option={distribution} label="一步预测的危机数分布及实际结果" height={158} />
+        ) : (
+          <div className="chart-loading small">等待预测</div>
+        )}
+        {reveal && (
+          <div className={`reveal-result ${reveal.covered ? 'covered' : 'outside'}`}>
+            <b>{reveal.covered ? '落在 90% 预测区间内' : '落在 90% 预测区间外'}</b>
+            <span>
+              实际 {reveal.actual} · 期望 {reveal.mean.toFixed(1)} · 第{' '}
+              {Math.round(reveal.percentile * 100)} 百分位
+            </span>
+          </div>
+        )}
+        <p className="chart-note">
+          危机 = 动荡或叛乱；已独立星区单独记录。
+          {history.length ? `已观察 ${history.length} 个十年。` : '历史还未展开。'}
+        </p>
+      </div>
     </section>
   );
 }

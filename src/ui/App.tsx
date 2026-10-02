@@ -18,6 +18,9 @@ import MissionPanel from './MissionPanel';
 import StoryEventPanel from './StoryEventPanel';
 import TurnResult from './TurnResult';
 import { useForecast } from './useForecast';
+import IntroSequence, { shouldPlayIntro } from './IntroSequence';
+import CampaignPanel from './CampaignPanel';
+import BookArchive from './BookArchive';
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 const EMPTY_HISTORY: never[] = [];
@@ -36,6 +39,8 @@ function initializeGame(): Game {
 export default function App() {
   const [game, dispatch] = useReducer(gameReducer, undefined, initializeGame);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [intro, setIntro] = useState(shouldPlayIntro);
+  const [focusRequest, setFocusRequest] = useState(0);
   const session = game.session;
   const world = session?.world ?? null,
     state = session?.state ?? null;
@@ -114,9 +119,18 @@ export default function App() {
     return (
       <>
         {game.error && <div className="error-banner">{game.error}</div>}
-        <SetupScreen onStart={(seed, n, mule) => dispatch({ type: 'START', seed, n, mule })} />
+        <SetupScreen
+          onStart={(seed, n, mule) => {
+            dispatch({ type: 'START', seed, n, mule });
+          }}
+          onReplayIntro={() => setIntro(true)}
+          intro={intro}
+          onFinishIntro={() => setIntro(false)}
+        />
       </>
     );
+
+  if (intro) return <IntroSequence onComplete={() => setIntro(false)} />;
 
   if (game.status === 'ended')
     return (
@@ -191,6 +205,10 @@ export default function App() {
           </button>
         </nav>
         <div className="header-right">
+          <BookArchive state={state} />
+          <button className="text-button intro-replay" onClick={() => setIntro(true)}>
+            重看入场
+          </button>
           <button className="text-button" onClick={() => dispatch({ type: 'OPEN_GUIDE' })}>
             玩法说明
           </button>
@@ -206,7 +224,7 @@ export default function App() {
         <div className="turn-heading">
           <div>
             <div className="eyebrow">
-              银河纪元 {12067 + state.turn * 10} · {world.n} 个星区
+              游戏纪元 {12067 + state.turn * 10} · {world.n} 个星区
             </div>
             <h1>
               {finished ? `${TOTAL_TURNS * 10} 年，已成为历史。` : '帝国还在。下一步，由你决定。'}
@@ -225,7 +243,6 @@ export default function App() {
             <small>{finished ? '推演完成' : `已过去 ${state.turn * 10} 年`}</small>
           </div>
         </div>
-        <MissionPanel world={world} state={state} />
         {game.reveal && session.lastOutcome && (
           <TurnResult
             outcome={session.lastOutcome}
@@ -313,21 +330,6 @@ export default function App() {
         {prediction.error && <div className="error-banner">预测暂不可用：{prediction.error}</div>}
         {game.view === 'empire' ? (
           <>
-            {currentEvent && !finished && (
-              <StoryEventPanel
-                event={currentEvent}
-                state={state}
-                selected={game.action.eventChoice}
-                disabled={revealing}
-                onSelect={(choice) => dispatch({ type: 'SELECT_EVENT', choice })}
-                onFocus={(sector) => {
-                  dispatch({ type: 'SELECT_SECTOR', sector });
-                  document
-                    .querySelector('.map-panel')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-              />
-            )}
             <div className="empire-grid">
               <StarMap
                 world={world}
@@ -340,6 +342,9 @@ export default function App() {
                 onSelect={(sector) => dispatch({ type: 'SELECT_SECTOR', sector })}
                 events={session.events}
                 revealing={revealing || !!game.reveal}
+                actions={session.actions}
+                reveals={session.reveals}
+                focusRequest={focusRequest}
               />
               <ForecastPanel
                 forecast={displayForecast}
@@ -349,6 +354,24 @@ export default function App() {
                 mule={game.muleRevealed}
               />
             </div>
+            <MissionPanel world={world} state={state} />
+            <CampaignPanel state={state} />
+            {currentEvent && !finished && (
+              <StoryEventPanel
+                event={currentEvent}
+                state={state}
+                selected={game.action.eventChoice}
+                disabled={revealing}
+                onSelect={(choice) => dispatch({ type: 'SELECT_EVENT', choice })}
+                onFocus={(sector) => {
+                  setFocusRequest((value) => value + 1);
+                  dispatch({ type: 'SELECT_SECTOR', sector });
+                  document
+                    .querySelector('.map-panel')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              />
+            )}
             {game.reveal && !session.lastOutcome && (
               <div
                 className={`reveal-banner ${game.muleRevealed ? 'mule-banner' : ''}`}

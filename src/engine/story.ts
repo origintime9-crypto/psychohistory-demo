@@ -1,5 +1,8 @@
 import { DEFAULT_PARAMS, TOTAL_TURNS, type Params } from './params';
 import { stream } from './rng';
+import { campaignEvent, initialChronicle } from './campaign';
+import type { LegacyField } from './types';
+import type { BookId } from './books';
 import { clamp, cloneState, counts, type State, type StoryChoiceId, type World } from './types';
 
 type LocalField =
@@ -13,6 +16,7 @@ type LocalField =
   | 'garrison'
   | 'openness';
 interface Effect {
+  legacy?: Partial<Record<LegacyField, number>>;
   local?: Partial<Record<LocalField, number>>;
   foundation?: number;
   governance?: number;
@@ -29,6 +33,7 @@ export interface StoryChoice {
   failure?: Effect;
   result: string;
   failureResult?: string;
+  future?: string;
 }
 export interface StoryEvent {
   id: string;
@@ -39,6 +44,7 @@ export interface StoryEvent {
   body: string;
   why: string;
   choices: StoryChoice[];
+  source?: { book: BookId; chapter: string; characters: string[]; note: string };
 }
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const choice = (
@@ -58,7 +64,12 @@ export function storyEvent(
   p: Params = DEFAULT_PARAMS,
   seed = world.seed,
 ): StoryEvent | null {
-  if (!p.storyEvents || s.turn >= TOTAL_TURNS || s.turn === 1) return null;
+  if (!p.storyEvents || s.turn >= TOTAL_TURNS) return null;
+  if (p.campaign) {
+    const chapter = campaignEvent(world, s);
+    if (chapter) return chapter;
+  }
+  if (s.turn === 1) return null;
   const rng = stream(seed, `dispatch-v3:${s.turn}`);
   if (s.turn !== 0 && rng.uniform() >= p.storyChance) return null;
   const active = Array.from(s.phase, (phase, i) => (phase < 3 ? i : -1)).filter((i) => i >= 0);
@@ -84,7 +95,7 @@ export function storyEvent(
     'refugees',
     'second-foundation',
   ];
-  if (s.lastStory) weights[ids.indexOf(s.lastStory)] *= 0.15;
+  if (s.lastStory && ids.includes(s.lastStory)) weights[ids.indexOf(s.lastStory)] *= 0.15;
   let selected = 0;
   if (s.turn !== 0) {
     let draw = rng.uniform() * weights.reduce((sum, v) => sum + v, 0);
@@ -420,6 +431,12 @@ export function applyStoryChoice(
   s.treasury = clamp(s.treasury - (option.cost.treasury ?? 0));
   const success = uniform < (option.chance ?? 1);
   const effect = success ? option.effect : (option.failure ?? {});
+  if (event.source) {
+    s.chronicle ??= initialChronicle();
+    for (const key of ['diplomacy', 'trade', 'secrecy'] as const)
+      s.chronicle[key] = clamp(s.chronicle[key] + (effect.legacy?.[key] ?? 0));
+    s.chronicle.resolved[event.id] = { choice: id, label: option.label, success, turn: s.turn + 1 };
+  }
   s.foundation = clamp(s.foundation + (effect.foundation ?? 0));
   s.treasury = clamp(s.treasury + (effect.treasury ?? 0));
   s.governance = clamp(s.governance + (effect.governance ?? 0));
@@ -475,5 +492,9 @@ export function previewStoryChoice(
       win[key][i] = win[key][i] * option.chance + loss[key][i] * (1 - option.chance);
   for (const key of ['foundation', 'treasury', 'governance', 'influence'] as const)
     win[key] = win[key] * option.chance + loss[key] * (1 - option.chance);
+  if (win.chronicle && loss.chronicle)
+    for (const key of ['diplomacy', 'trade', 'secrecy'] as const)
+      win.chronicle[key] =
+        win.chronicle[key] * option.chance + loss.chronicle[key] * (1 - option.chance);
   return win;
 }

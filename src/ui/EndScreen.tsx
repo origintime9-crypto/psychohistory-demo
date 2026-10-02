@@ -5,6 +5,8 @@ import { MODEL_VERSION, TOTAL_TURNS } from '../engine/params';
 import { modelFingerprint } from './saveGame';
 import Chart, { chartTheme } from './Chart';
 import { useMemo } from 'react';
+import { campaignEnding, LEGACIES } from '../engine/campaign';
+import BookArchive from './BookArchive';
 export default function EndScreen({
   world,
   state,
@@ -27,6 +29,7 @@ export default function EndScreen({
   onReview: () => void;
 }) {
   const result = score(state.foundation, history);
+  const ending = campaignEnding(state);
   const coverage = reveals.filter((r) => r.covered).length;
   const brier = observations.length
     ? observations.reduce((s, o) => s + (o.probability - o.outcome) ** 2, 0) / observations.length
@@ -83,9 +86,10 @@ export default function EndScreen({
       history,
       reveals,
       observations,
+      chronicle: state.chronicle,
+      narrativeEnding: ending,
       model: MODEL_VERSION,
-      seedProtocol:
-        'world.seed → map / initial / deck:turn / dispatch-v3:turn / reality / calibration / prediction:turn / unmodeled-mule-v3',
+      seedProtocol: `world.seed → map / initial / deck:turn / dispatch-v3:turn / reality / calibration / prediction:turn / ${params.campaign ? 'unmodeled-mule-campaign-v1; 主线使用公开章节顺序' : 'unmodeled-mule-v3'}`,
       disclaimer: '常规机制已建模，骡不进入事前预测；随机流隔离；不是现实政治预测。',
     };
     const url = URL.createObjectURL(
@@ -108,6 +112,21 @@ export default function EndScreen({
             : '帝国消逝，历史仍在继续。'}
       </h1>
       <p className="end-intro">你无法决定每一颗星的命运，却改变了它们汇成的历史。</p>
+      {ending && (
+        <section className="campaign-ending">
+          <span className="eyebrow">你留下的文明路线</span>
+          <h2>{ending.title}</h2>
+          <p>{ending.text}</p>
+          <div>
+            {LEGACIES.map((item) => (
+              <span key={item.key}>
+                {item.label} <b>{Math.round(state.chronicle![item.key] * 100)}%</b>
+              </span>
+            ))}
+          </div>
+          <small>路线记录你的选择；实际恢复程度仍由稳定与知识得分决定。</small>
+        </section>
+      )}
       <section className="darkness-result">
         <span>预计黑暗时代</span>
         <div>
@@ -171,6 +190,7 @@ export default function EndScreen({
         </p>
       </div>
       <div className="end-actions">
+        <BookArchive state={state} />
         <button className="primary" onClick={onRestart}>
           重新开始 <span>↗</span>
         </button>

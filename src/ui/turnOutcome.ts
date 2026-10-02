@@ -27,6 +27,21 @@ export function turnOutcome(
       : before.phase.findIndex((phase) => phase !== 3);
   const focus = action.target ?? result.story?.target ?? (active >= 0 ? active : world.terminus);
   const direct: TurnOutcome['direct'] = [];
+  if (before.chronicle && immediate.chronicle)
+    for (const [field, label] of [
+      ['diplomacy', '剧情 · 外交承诺'],
+      ['trade', '剧情 · 贸易网络'],
+      ['secrecy', '剧情 · 保密度'],
+    ] as const) {
+      const delta = immediate.chronicle[field] - before.chronicle[field];
+      if (Math.abs(delta) > 0.001)
+        direct.push({
+          label,
+          before: before.chronicle[field],
+          after: immediate.chronicle[field],
+          good: delta > 0,
+        });
+    }
   for (const [field, label, higherGood] of [
     ['governance', '帝国 · 治理能力', true],
     ['reform', '帝国 · 后续改革支撑', true],

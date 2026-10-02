@@ -1,19 +1,31 @@
-import { useState } from 'react';
-import { PHASE_NAMES } from '../engine/flavor';
-import { riskBreakdown } from '../engine/hazard';
-import type { Params } from '../engine/params';
-import type { Event, State, TargetEffect, World } from '../engine/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { describeEvent, PHASE_NAMES } from '../engine/flavor';
+import { riskBreakdown, transitionProbabilities } from '../engine/hazard';
+import { TOTAL_TURNS, type Params } from '../engine/params';
+import { storyEvent } from '../engine/story';
+import {
+  counts,
+  type Action,
+  type Event,
+  type Reveal,
+  type State,
+  type TargetEffect,
+  type World,
+} from '../engine/types';
+import GalaxyScene, { type GalaxyHandle, type SceneSector } from './GalaxyScene';
+import GalaxyEventFeed from './GalaxyEventFeed';
+import { galaxyArchive, sectorRecords, storyTone } from './galaxyArchive';
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 export function riskColor(p: number, phase: number): string {
   return phase === 3
-    ? '#627184'
+    ? '#8393ac'
     : p < 0.22
-      ? '#7cbaad'
+      ? '#7daed5'
       : p < 0.45
         ? '#d4bd80'
         : p < 0.7
-          ? '#d88e63'
-          : '#df626b';
+          ? '#e69f72'
+          : '#f0798b';
 }
 interface Props {
   world: World;
@@ -26,309 +38,605 @@ interface Props {
   onSelect: (i: number) => void;
   events: Event[];
   revealing: boolean;
+  actions: Action[];
+  reveals: Reveal[];
+  focusRequest?: number;
 }
-export default function StarMap({
-  world,
-  state,
-  params,
-  probabilities,
-  selected,
-  targeting,
-  targetEffects,
-  onSelect,
-  events,
-  revealing,
-}: Props) {
-  const [hover, setHover] = useState<number | null>(null);
-  const focus = hover ?? selected ?? world.capital;
-  const changed = new Set(events.map((e) => e.sector));
-  const changedEvents = new Map(events.map((e) => [e.sector, e]));
-  const pos = (i: number) => [370 + world.x[i] * 282, 312 + world.y[i] * 252];
-  const effects = new Map(targetEffects?.map((e) => [e.target, e.crisisDelta]) ?? []);
+export default function StarMap(props: Props) {
+  const {
+    world,
+    state: liveState,
+    params,
+    selected,
+    targeting,
+    targetEffects,
+    onSelect,
+    actions,
+    reveals,
+  } = props;
+  const scene = useRef<GalaxyHandle>(null);
+  const panel = useRef<HTMLElement>(null);
+  const [archiveTurn, setArchiveTurn] = useState<number | null>(null);
+  const [inspected, setInspected] = useState<number | undefined>(selected);
+  const [network, setNetwork] = useState(true);
+  const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(() => window.innerWidth > 1000);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [viewError, setViewError] = useState('');
+  const frames = useMemo(() => galaxyArchive(world, params, actions), [world, params, actions]);
+  const turn = archiveTurn ?? liveState.turn;
+  const archived = turn < liveState.turn;
+  const frame = frames[turn];
+  const state = archived ? frame.state : liveState;
+  const events = archived ? frame.events : props.events;
+  const currentDispatch = useMemo(() => storyEvent(world, state, params), [world, state, params]);
+  const focus = inspected ?? world.capital;
+  const effects = useMemo(
+    () => new Map(targetEffects?.map((e) => [e.target, e.crisisDelta]) ?? []),
+    [targetEffects],
+  );
+  const records = useMemo(
+    () => sectorRecords(world, frames, focus, turn),
+    [world, frames, focus, turn],
+  );
   const breakdown = riskBreakdown(world, state, focus, params);
+  const c = counts(state);
+  const chances = transitionProbabilities(world, state, focus, 0, params);
+  const probability =
+    !archived && props.probabilities ? props.probabilities[focus] : chances[1] + chances[2];
+  const changed = new Map(events.map((e) => [e.sector, e]));
+  const sectors: SceneSector[] = Array.from({ length: world.n }, (_, i) => {
+    const chance = transitionProbabilities(world, state, i, 0, params);
+    const p = !archived && props.probabilities ? props.probabilities[i] : chance[1] + chance[2];
+    const delta = !archived && targeting ? effects.get(i) : undefined;
+    const color =
+      delta === undefined
+        ? riskColor(p, state.phase[i])
+        : delta < -0.03
+          ? '#81d6bd'
+          : delta > 0.01
+            ? '#f0798b'
+            : '#a3b4c8';
+    const event = changed.get(i);
+    return {
+      color,
+      label: world.names[i],
+      phase: state.phase[i],
+      status: `${PHASE_NAMES[state.phase[i]]} · ${pct(p)}`,
+      event:
+        currentDispatch?.target === i
+          ? storyTone(currentDispatch)
+          : event
+            ? event.to === 0
+              ? 'science'
+              : 'crisis'
+            : undefined,
+    };
+  });
+  useEffect(() => {
+    if (selected !== undefined) setInspected(selected);
+  }, [selected, props.focusRequest]);
+  useEffect(() => {
+    const update = () => setFullscreen(document.fullscreenElement === panel.current);
+    document.addEventListener('fullscreenchange', update);
+    return () => document.removeEventListener('fullscreenchange', update);
+  }, []);
+  useEffect(() => {
+    setArchiveTurn(null);
+    setPlaying(false);
+  }, [liveState.turn]);
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setInterval(
+      () =>
+        setArchiveTurn((value) => {
+          const next = (value ?? 0) + 1;
+          if (next >= liveState.turn) {
+            setPlaying(false);
+            return null;
+          }
+          return next;
+        }),
+      1300,
+    );
+    return () => clearInterval(timer);
+  }, [playing, liveState.turn]);
+  const inspect = (i: number) => {
+    setInspected(i);
+    setFeedOpen(false);
+    setSearchOpen(false);
+    if (!archived) onSelect(i);
+  };
+  const reset = () => {
+    setInspected(undefined);
+    scene.current?.reset();
+  };
+  const timeline = (value: number) => {
+    setPlaying(false);
+    setArchiveTurn(value === liveState.turn ? null : value);
+  };
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === panel.current) await document.exitFullscreen();
+      else await panel.current?.requestFullscreen();
+      setViewError('');
+    } catch {
+      setViewError('浏览器暂不支持全屏，可以继续在当前星图探索。');
+    }
+  };
+  const search = world.names
+    .map((name, i) => ({ name, i }))
+    .filter(({ name }) => name.includes(query.trim()));
   return (
-    <section className="panel map-panel">
-      <div className="panel-heading">
+    <section
+      ref={panel}
+      className={`panel map-panel galaxy-panel ${inspected !== undefined ? 'has-drawer' : ''}`}
+      aria-label="银河探索控制台"
+    >
+      <div className="panel-heading galaxy-heading">
         <div>
-          <div className="eyebrow">银河态势</div>
-          <h2>{targeting ? '选择干预星区' : '帝国，仍有群星'}</h2>
+          <div className="eyebrow">GALACTIC ATLAS / 银河全息星图</div>
+          <h2>
+            {archived
+              ? '回望已经发生的历史'
+              : targeting
+                ? '选择你的干预坐标'
+                : '群星之中，寻找文明的下一步'}
+          </h2>
         </div>
-        <span className="live-label">
-          <i />
-          {revealing ? '历史正在展开' : '预测已同步'}
-        </span>
-      </div>
-      <div className="map-wrap">
-        <svg
-          viewBox="0 0 740 630"
-          className={`star-map ${targeting ? 'targeting' : ''}`}
-          role="group"
-          aria-label="银河星区图，点击星区查看详情或选为卡牌目标"
-        >
-          <defs>
-            <radialGradient id="galaxy-glow">
-              <stop stopColor="#315c60" stopOpacity=".24" />
-              <stop offset=".58" stopColor="#172d3b" stopOpacity=".12" />
-              <stop offset="1" stopColor="#0c141d" stopOpacity="0" />
-            </radialGradient>
-            <filter id="star-glow">
-              <feGaussianBlur stdDeviation="3" />
-            </filter>
-          </defs>
-          <ellipse cx="370" cy="312" rx="305" ry="275" fill="url(#galaxy-glow)" />
-          {[90, 180, 270].map((r) => (
-            <ellipse
-              key={r}
-              cx="370"
-              cy="312"
-              rx={r}
-              ry={r * 0.89}
-              fill="none"
-              stroke="#273443"
-              strokeDasharray="3 9"
-              opacity=".6"
-            />
-          ))}
-          <path d="M55 312H685 M370 35V589" stroke="#22313e" strokeDasharray="2 8" />
-          <text x="65" y="603" className="map-caption">
-            银河标准坐标 / 川陀中心
-          </text>
-          <text x="675" y="45" textAnchor="end" className="map-caption">
-            {world.n} 个星区
-          </text>
-          {world.edges.map(([a, b]) => {
-            const p = pos(a),
-              q = pos(b);
-            const lit = selected === a || selected === b;
-            return (
-              <line
-                key={`${a}-${b}`}
-                x1={p[0]}
-                y1={p[1]}
-                x2={q[0]}
-                y2={q[1]}
-                stroke={lit ? '#bda571' : '#385264'}
-                strokeWidth={lit ? 1.3 : 0.8}
-                opacity={lit ? 0.75 : 0.35}
-              />
-            );
-          })}
-          {Array.from({ length: world.n }, (_, i) => {
-            const [x, y] = pos(i),
-              p = probabilities?.[i] ?? 0,
-              delta = targeting ? effects.get(i) : undefined,
-              color =
-                state.phase[i] === 3
-                  ? '#627184'
-                  : delta !== undefined
-                    ? delta < -0.03
-                      ? '#7cbaad'
-                      : delta > 0.01
-                        ? '#df626b'
-                        : '#9ba9b7'
-                    : riskColor(p, state.phase[i]);
-            const special = i === world.capital || i === world.terminus;
-            const isSelected = selected === i;
-            const changedEvent = changedEvents.get(i);
-            return (
-              <g
-                key={i}
-                transform={`translate(${x} ${y})`}
-                role="button"
-                tabIndex={0}
-                aria-label={`${world.names[i]}，${PHASE_NAMES[state.phase[i]]}${probabilities ? `，危机概率 ${pct(p)}` : ''}${delta !== undefined ? `，干预危机变化 ${delta.toFixed(2)}` : ''}`}
-                aria-pressed={isSelected}
-                className={`sector ${revealing && changed.has(i) ? 'event-pulse' : ''} ${state.phase[i] === 3 ? 'independent' : ''}`}
-                onClick={() => onSelect(i)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelect(i);
-                  }
-                }}
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(null)}
-                onFocus={() => setHover(i)}
-                onBlur={() => setHover(null)}
-              >
-                <title>
-                  {world.names[i]} · {PHASE_NAMES[state.phase[i]]} · 下回合危机概率{' '}
-                  {probabilities ? pct(p) : '计算中'}
-                </title>
-                <circle r="16" fill="transparent" />
-                {revealing && changedEvent && (
-                  <circle
-                    className={`history-wave phase-${changedEvent.to}`}
-                    r="12"
-                    fill="none"
-                    stroke={
-                      changedEvent.to === 0
-                        ? '#9ce8c9'
-                        : changedEvent.to === 3
-                          ? '#ee6576'
-                          : '#e9bb72'
-                    }
-                    strokeWidth="1.6"
-                  />
-                )}
-                {(special || isSelected) && (
-                  <circle
-                    r={isSelected ? 15 : 10}
-                    fill="none"
-                    stroke={isSelected ? '#e1c48d' : color}
-                    opacity={isSelected ? 1 : 0.55}
-                    strokeDasharray={isSelected ? undefined : '2 3'}
-                  />
-                )}
-                <circle r={special ? 7 : 5} fill={color} opacity=".24" filter="url(#star-glow)" />
-                {state.phase[i] === 3 ? (
-                  <path d="M-4-4L4 4M4-4L-4 4" stroke={color} strokeWidth="1.7" />
-                ) : (
-                  <circle r={special ? 4.5 : 3.1} fill={color} />
-                )}
-                {(special || isSelected || hover === i) && (
-                  <text
-                    x="13"
-                    y="5"
-                    fill={isSelected ? '#e1c48d' : '#bac6d1'}
-                    className="sector-label"
-                  >
-                    {world.names[i]}
-                    {i === world.capital ? ' / 首都' : i === world.terminus ? ' / 基地' : ''}
-                  </text>
-                )}
-                {revealing && changedEvent && (special || events.indexOf(changedEvent) < 5) && (
-                  <text
-                    className="map-change-label"
-                    x="10"
-                    y="-14"
-                    fill={
-                      changedEvent.to === 0
-                        ? '#9ce8c9'
-                        : changedEvent.to === 3
-                          ? '#ee6576'
-                          : '#e9bb72'
-                    }
-                  >
-                    {changedEvent.to === 0
-                      ? '恢复秩序'
-                      : changedEvent.to === 3
-                        ? '脱离帝国'
-                        : PHASE_NAMES[changedEvent.to]}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      <div className="map-legend">
-        {targeting && targetEffects ? (
-          <>
-            <span>此卡在各目标的下一步危机变化估算</span>
-            <span className="mint">降低</span>
-            <span>近似不变</span>
-            <span className="rose">增加</span>
-          </>
-        ) : (
-          <>
-            <span>下回合活跃危机概率</span>
-            <span>
-              <i style={{ background: '#7cbaad' }} />低
-            </span>
-            <span>
-              <i style={{ background: '#d4bd80' }} />中
-            </span>
-            <span>
-              <i style={{ background: '#df626b' }} />高
-            </span>
-          </>
-        )}
-        <span>
-          <i className="cross">×</i>已独立
-        </span>
-      </div>
-      {targeting && (
-        <p className="heatmap-note">
-          共同冲击固定为 0 的单步模型估算。终局得分、稳定和财政代价请看卡面与选定行动；
-          {effects.has(focus)
-            ? `此处危机变化 ${effects.get(focus)!.toFixed(2)}。`
-            : '热力图计算中。'}
-        </p>
-      )}
-      <div className="sector-details">
-        <div>
-          <b>{world.names[focus]}</b>
-          <span className={`state-tag phase-${state.phase[focus]}`}>
-            {PHASE_NAMES[state.phase[focus]]}
+        <div className="galaxy-view-actions">
+          <button type="button" aria-expanded={feedOpen} onClick={() => setFeedOpen(!feedOpen)}>
+            {feedOpen ? '收起事件流' : '事件流'}
+          </button>
+          {document.fullscreenEnabled && (
+            <button type="button" onClick={toggleFullscreen}>
+              {fullscreen ? '退出沉浸星图' : '沉浸星图 ⤢'}
+            </button>
+          )}
+          <span className="live-label">
+            <i />
+            {archived
+              ? `档案 · ${12067 + turn * 10}`
+              : props.revealing
+                ? '历史正在展开'
+                : '实时推演'}
           </span>
         </div>
-        <p className="sector-explainer">
-          当前星区条件：繁荣低会让生活困难；精英过剩与派系化高会加剧权力争夺；合法性低意味着居民不再信任帝国。
-        </p>
-        <dl>
-          <div>
-            <dt>危机概率</dt>
-            <dd>{probabilities ? pct(probabilities[focus]) : '—'}</dd>
-          </div>
-          <div>
-            <dt>繁荣</dt>
-            <dd>{pct(state.prosperity[focus])}</dd>
-          </div>
-          <div>
-            <dt>精英过剩</dt>
-            <dd>{pct(state.elites[focus])}</dd>
-          </div>
-          <div>
-            <dt>合法性</dt>
-            <dd>{pct(state.legitimacy[focus])}</dd>
-          </div>
-          <div>
-            <dt>派系化</dt>
-            <dd>{pct(state.faction[focus])}</dd>
-          </div>
-          <div>
-            <dt>政体开放度</dt>
-            <dd>{pct(state.openness[focus])}</dd>
-          </div>
-          <div>
-            <dt>人口压力</dt>
-            <dd>{pct(state.pressure[focus])}</dd>
-          </div>
-          <div>
-            <dt>宗教影响</dt>
-            <dd>{pct(state.religion[focus])}</dd>
-          </div>
-        </dl>
       </div>
-      <details className="risk-breakdown" open>
-        <summary>为什么这里有风险？</summary>
-        <h3>{breakdown.title}</h3>
-        <ul>
-          {breakdown.terms.map((term) => (
-            <li key={term.label} title={term.hint}>
-              <span>{term.label}</span>
-              <div
-                className="risk-track"
-                role="img"
-                aria-label={`${term.label}对数风险贡献 ${term.value.toFixed(2)}`}
-              >
-                <i
-                  className={term.value < 0 ? 'risk-negative' : 'risk-positive'}
-                  style={{ width: `${Math.min(50, (Math.abs(term.value) / 3) * 50)}%` }}
-                />
-              </div>
-              <b className={term.value < 0 ? 'mint' : 'gold'}>
-                {term.value >= 0 ? '+' : ''}
-                {term.value.toFixed(2)}
-              </b>
-            </li>
-          ))}
-        </ul>
-        <p>
-          条形是对数风险的增减贡献，不是概率份额；绿色降低、金色增加。未包含基线常数和未来冲击。人口压力、宗教通过繁荣、精英和合法性逐步生效。
+      {viewError && (
+        <p className="galaxy-view-error" role="status">
+          {viewError}
         </p>
-      </details>
+      )}
+      <div className="galaxy-stage">
+        <GalaxyScene
+          ref={scene}
+          world={world}
+          sectors={sectors}
+          selected={inspected}
+          network={network}
+          onSelect={inspect}
+        />
+        <div className="galaxy-tools">
+          <button
+            type="button"
+            onClick={() => scene.current?.zoom(0.8)}
+            aria-label="放大星图"
+            title="放大星图"
+          >
+            ＋
+          </button>
+          <button
+            type="button"
+            onClick={() => scene.current?.zoom(1.25)}
+            aria-label="缩小星图"
+            title="缩小星图"
+          >
+            −
+          </button>
+          <button type="button" onClick={reset} aria-label="返回银河全景" title="返回银河全景">
+            ⌖
+          </button>
+          <button
+            type="button"
+            onClick={() => setNetwork(!network)}
+            aria-pressed={network}
+            aria-label="切换星区联系线"
+            title="星区联系线"
+          >
+            ⌁
+          </button>
+        </div>
+        <div className="galaxy-search">
+          <label htmlFor="sector-search">
+            <span>⌕</span>
+            <input
+              id="sector-search"
+              value={query}
+              onFocus={() => setSearchOpen(true)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSearchOpen(true);
+              }}
+              placeholder="定位星区…"
+              aria-label="搜索银河星区"
+              autoComplete="off"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setSearchOpen(false);
+                if (e.key === 'Enter' && search[0]) inspect(search[0].i);
+              }}
+            />
+          </label>
+          {searchOpen && (
+            <div className="sector-search-results">
+              <button className="search-close" onClick={() => setSearchOpen(false)}>
+                收起列表 ×
+              </button>
+              {search.length ? (
+                search.map(({ name, i }) => (
+                  <button key={i} type="button" onClick={() => inspect(i)}>
+                    <b>{name}</b>
+                    <span>{PHASE_NAMES[state.phase[i]]}</span>
+                  </button>
+                ))
+              ) : (
+                <p>没有找到这个星区</p>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="galaxy-readout" aria-hidden="true">
+          <span>银河纪元</span>
+          <strong>
+            {12067 + turn * 10}
+            <i>GE</i>
+          </strong>
+          <small>
+            {c.stable} 稳定 / {c.crisis} 危机 / {c.independent} 独立
+          </small>
+        </div>
+        {feedOpen && (
+          <GalaxyEventFeed
+            world={world}
+            frames={frames}
+            turn={turn}
+            dispatch={archived ? null : currentDispatch}
+            onClose={() => setFeedOpen(false)}
+            onLocate={(sector, recordTurn) => {
+              timeline(recordTurn ?? liveState.turn);
+              setInspected(sector);
+              setSearchOpen(false);
+              setFeedOpen(false);
+            }}
+          />
+        )}
+        <div className="galaxy-coordinate" aria-hidden="true">
+          TRANTOR ORIGIN · {world.n} SECTORS
+          <br />
+          {network ? 'NEIGHBOR NETWORK / 邻区作用通道' : 'DEEP SPACE / 深空模式'}
+        </div>
+        {inspected === undefined && (
+          <div className="galaxy-hint">
+            <span>✧</span>
+            <div>
+              点击一颗星，打开它的历史<small>拖动旋转 · 滚轮缩放 · 右键平移 · 双指操作</small>
+            </div>
+          </div>
+        )}
+        {archived && (
+          <div className="archive-badge">
+            历史回看 · 第 {turn} 回合{' '}
+            <button onClick={() => timeline(liveState.turn)}>返回当前 →</button>
+          </div>
+        )}
+        {inspected !== undefined && (
+          <aside
+            className="planet-drawer"
+            aria-label={`${world.names[focus]}星区档案`}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') reset();
+            }}
+          >
+            <header>
+              <div>
+                <span className="eyebrow">SECTOR ARCHIVE / 星区档案</span>
+                <h3>{world.names[focus]}</h3>
+              </div>
+              <button type="button" onClick={reset} aria-label="关闭星区档案">
+                ×
+              </button>
+            </header>
+            <div className="planet-profile">
+              <div
+                className={`holo-planet phase-${state.phase[focus]}`}
+                style={{ '--planet-color': sectors[focus].color } as React.CSSProperties}
+              >
+                <i />
+              </div>
+              <div>
+                <span className={`state-tag phase-${state.phase[focus]}`}>
+                  {PHASE_NAMES[state.phase[focus]]}
+                  {focus === world.capital
+                    ? ' · 帝国首都'
+                    : focus === world.terminus
+                      ? ' · 基地'
+                      : ' · 边疆星域'}
+                </span>
+                <small>
+                  X {world.x[focus].toFixed(3)} / Z {world.y[focus].toFixed(3)}
+                </small>
+                <small>
+                  人口权重 {pct(world.weights[focus])} · {world.neighbors[focus].length} 个邻区
+                </small>
+              </div>
+            </div>
+            <div className="planet-risk">
+              <span>{archived || !props.probabilities ? '单步危机估算' : '下回合危机概率'}</span>
+              <strong style={{ color: sectors[focus].color }}>{pct(probability)}</strong>
+              <i
+                style={
+                  {
+                    '--risk-width': pct(probability),
+                    '--star-color': sectors[focus].color,
+                  } as React.CSSProperties
+                }
+              />
+              <small>
+                {archived || !props.probabilities
+                  ? '共同冲击设为零；与完整蒙特卡洛预测不同。'
+                  : '动荡或叛乱的概率；并非确定会发生。'}
+              </small>
+            </div>
+            <div className="planet-countdown">
+              <span>下一次历史揭晓</span>
+              <b>{turn >= TOTAL_TURNS ? '推演结束' : `${12067 + (turn + 1) * 10} GE / 十年后`}</b>
+            </div>
+            {targeting && !archived && (
+              <div className="planet-target">
+                {state.phase[focus] === 3
+                  ? '已独立星区不能接受定向干预。'
+                  : selected !== focus
+                    ? '你正在查看这个星区。选择为目标后，干预预览才会更新。'
+                    : effects.has(focus)
+                      ? `此卡的危机变化估算 ${effects.get(focus)!.toFixed(2)}。目标已选定，请在下方确认命令。`
+                      : '目标已选定，干预效果计算中。'}
+                {state.phase[focus] !== 3 && selected !== focus && (
+                  <button type="button" onClick={() => onSelect(focus)}>
+                    选为当前干预目标 →
+                  </button>
+                )}
+              </div>
+            )}
+            <dl className="planet-metrics">
+              {(
+                [
+                  ['繁荣', state.prosperity[focus]],
+                  ['合法性', state.legitimacy[focus]],
+                  ['人口压力', state.pressure[focus]],
+                  ['精英过剩', state.elites[focus]],
+                  ['派系化', state.faction[focus]],
+                  ['教育', state.education[focus]],
+                ] as [string, number][]
+              ).map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{pct(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <details className="planet-model">
+              <summary>历史分叉 · 单步转移概率</summary>
+              <div>
+                {chances.map((p, i) => (
+                  <div key={i}>
+                    <span>{PHASE_NAMES[i]}</span>
+                    <i style={{ width: pct(p) }} />
+                    <b>{pct(p)}</b>
+                  </div>
+                ))}
+              </div>
+              <p>当前条件、共同冲击为零的模型估算，不是谢顿危机倒计时。</p>
+            </details>
+            <details className="planet-model">
+              <summary>{breakdown.title}</summary>
+              <div>
+                {breakdown.terms.map((term) => (
+                  <div key={term.label} title={term.hint}>
+                    <span>{term.label}</span>
+                    <b className={term.value < 0 ? 'mint' : 'gold'}>
+                      {term.value >= 0 ? '+' : ''}
+                      {term.value.toFixed(2)}
+                    </b>
+                  </div>
+                ))}
+              </div>
+              <p>对数风险贡献，不是概率份额。人口与宗教会通过繁荣、精英与合法性逐步生效。</p>
+            </details>
+            <section className="planet-history">
+              <h4>
+                历史回声 <span>{records.length.toString().padStart(2, '0')}</span>
+              </h4>
+              {currentDispatch?.target === focus && !archived && (
+                <details className="planet-record tone-politics" open>
+                  <summary>
+                    <small>当前急电 · {12067 + turn * 10} GE</small>
+                    <b>{currentDispatch.title}</b>
+                  </summary>
+                  <p>{currentDispatch.body}</p>
+                  <small>{currentDispatch.why}</small>
+                </details>
+              )}
+              {records.map((record, i) => (
+                <details
+                  className={`planet-record tone-${record.tone}`}
+                  key={`${record.turn}-${i}`}
+                  open={i === 0}
+                >
+                  <summary>
+                    <small>{12067 + record.turn * 10} GE</small>
+                    <b>{record.title}</b>
+                  </summary>
+                  <p>{record.text}</p>
+                  {record.source && <em className="dispatch-origin">{record.source}</em>}
+                  <small>{record.context}</small>
+                  <button type="button" onClick={() => timeline(record.turn)}>
+                    定位此刻 →
+                  </button>
+                </details>
+              ))}
+            </section>
+            <div className="planet-neighbors">
+              <h4>相邻星域</h4>
+              {world.neighbors[focus].map((i) => (
+                <button key={i} onClick={() => inspect(i)}>
+                  {world.names[i]} <span>{PHASE_NAMES[state.phase[i]]} ↗</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+        )}
+      </div>
+      <div className="galaxy-legend">
+        <span>
+          <i style={{ background: '#7daed5' }} />
+          低危机
+        </span>
+        <span>
+          <i style={{ background: '#d4bd80' }} />
+          中危机
+        </span>
+        <span>
+          <i style={{ background: '#f0798b' }} />
+          高危机
+        </span>
+        <span>
+          <i style={{ background: '#8393ac' }} />
+          已独立
+        </span>
+        <span className="legend-caption">
+          {targeting && !archived
+            ? '星球颜色表示此卡的危机变化：绿降低、红增加。'
+            : '光环：蓝 恢复 / 红 危机 / 金 急电'}
+        </span>
+      </div>
+      <div className="era-timeline">
+        <div className="era-top">
+          <span>
+            银河历史 <small>{archived ? '档案回看' : '当前位置'}</small>
+          </span>
+          <b>
+            {12067 + turn * 10} <small>GE</small>
+          </b>
+          <div>
+            <button
+              type="button"
+              disabled={!liveState.turn}
+              aria-label={playing ? '暂停历史播放' : '播放已有历史'}
+              onClick={() => {
+                if (playing) setPlaying(false);
+                else {
+                  setArchiveTurn(0);
+                  setPlaying(true);
+                }
+              }}
+            >
+              {playing ? 'Ⅱ' : '▷'}
+            </button>
+            <button type="button" onClick={() => timeline(liveState.turn)} disabled={!archived}>
+              回到现在 ↗
+            </button>
+          </div>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max={liveState.turn || 1}
+          step="1"
+          value={turn}
+          disabled={!liveState.turn}
+          aria-label="银河纪元历史滑块"
+          aria-valuetext={`${12067 + turn * 10} 年，第 ${turn} 回合`}
+          onChange={(e) => timeline(Number(e.target.value))}
+        />
+        <div className="era-ticks">
+          <span>12067 · 谢顿计划启动</span>
+          <span>
+            {liveState.turn
+              ? `${12067 + liveState.turn * 10} · 已记录 ${liveState.turn * 10} 年`
+              : '推进首个回合后解锁历史回看'}
+          </span>
+        </div>
+        {reveals.length > 0 && (
+          <svg
+            viewBox="0 0 1000 55"
+            preserveAspectRatio="none"
+            className="era-deviation"
+            role="img"
+            aria-label="帝国危机数：实际与事前预测的偏离曲线"
+          >
+            <title>每个已完成回合的实际危机数（实线）与事前期望（虚线）</title>
+            <polyline
+              fill="none"
+              stroke="#689baa"
+              strokeWidth="1.5"
+              strokeDasharray="5 5"
+              points={
+                '0,50 ' +
+                reveals
+                  .map(
+                    (r, i) => `${((i + 1) / liveState.turn) * 990},${50 - (r.mean / world.n) * 45}`,
+                  )
+                  .join(' ')
+              }
+            />
+            <polyline
+              fill="none"
+              stroke="#d9b785"
+              strokeWidth="2"
+              points={
+                '0,50 ' +
+                reveals
+                  .map(
+                    (r, i) =>
+                      `${((i + 1) / liveState.turn) * 990},${50 - (r.actual / world.n) * 45}`,
+                  )
+                  .join(' ')
+              }
+            />
+            {reveals.map((r, i) => (
+              <circle
+                key={r.turn}
+                cx={((i + 1) / liveState.turn) * 990}
+                cy={50 - (r.actual / world.n) * 45}
+                r="3"
+                fill={r.covered ? '#d9b785' : '#f0798b'}
+              />
+            ))}
+          </svg>
+        )}
+        {reveals.length > 0 && (
+          <small className="era-chart-caption">
+            实线：实际危机数 / 虚线：事前期望 / 红点：超出 90% 预测区间
+          </small>
+        )}
+      </div>
+      {events.length > 0 && (
+        <div className="galaxy-event-feed" aria-live="polite">
+          <span>本纪元事件</span>
+          {events.slice(0, 4).map((e) => (
+            <button
+              key={e.sector}
+              onClick={() => inspect(e.sector)}
+              title={describeEvent(world, e)}
+            >
+              {world.names[e.sector]} · {PHASE_NAMES[e.to]} ↗
+            </button>
+          ))}
+          {events.length > 4 && <small>另有 {events.length - 4} 个变动</small>}
+        </div>
+      )}
     </section>
   );
 }

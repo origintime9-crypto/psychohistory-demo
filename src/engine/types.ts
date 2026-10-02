@@ -2,6 +2,16 @@ export type CardId = 'academy' | 'religion' | 'elites' | 'tax' | 'reform' | 'fou
 export type StoryChoiceId = 'aid' | 'bargain' | 'defer';
 export type Action = { card: CardId; target?: number; eventChoice?: StoryChoiceId };
 export type Phase = 0 | 1 | 2 | 3;
+export type LegacyField = 'diplomacy' | 'trade' | 'secrecy';
+export interface ChronicleState {
+  diplomacy: number;
+  trade: number;
+  secrecy: number;
+  resolved: Record<
+    string,
+    { choice: StoryChoiceId; label: string; success: boolean; turn: number }
+  >;
+}
 export interface World {
   seed: string;
   n: number;
@@ -38,6 +48,7 @@ export interface State {
   taxReliefTurns: number;
   muleOccurred: boolean;
   lastStory: string | null;
+  chronicle?: ChronicleState;
 }
 export interface Event {
   sector: number;
@@ -159,6 +170,7 @@ export const ARRAY_KEYS = [
 ] as const;
 export function cloneState(s: State): State {
   const copy = { ...s };
+  if (s.chronicle) copy.chronicle = { ...s.chronicle, resolved: { ...s.chronicle.resolved } };
   for (const k of ARRAY_KEYS) (copy[k] as Float64Array | Uint8Array) = s[k].slice();
   return copy;
 }

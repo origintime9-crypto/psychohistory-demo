@@ -1,4 +1,5 @@
 import { CARDS, drawHand } from '../engine/cards';
+import { initialChronicle } from '../engine/campaign';
 import { step } from '../engine/dynamics';
 import { describeEvent, turnHeadline } from '../engine/flavor';
 import { revealForecast } from '../engine/forecast';
@@ -89,7 +90,10 @@ export function createSession(seed: string, n: number, params: Params): Session 
   const world = generateWorld(seed, { n });
   return {
     world,
-    state: initialState(world),
+    state: {
+      ...initialState(world),
+      ...(params.campaign ? { chronicle: initialChronicle() } : {}),
+    },
     params: { ...params },
     reality: stream(seed, 'reality'),
     calibration: stream(seed, 'calibration'),
@@ -202,7 +206,11 @@ export function gameReducer(game: Game, event: GameAction): Game {
       case 'START':
         return {
           ...emptyGame(game.tutorialDone),
-          session: createSession(event.seed, event.n, { ...DEFAULT_PARAMS, mule: event.mule }),
+          session: createSession(event.seed, event.n, {
+            ...DEFAULT_PARAMS,
+            mule: event.mule,
+            campaign: true,
+          }),
           status: 'playing',
           tutorialStep: game.tutorialDone ? null : 0,
           view: game.tutorialDone ? 'empire' : 'briefing',

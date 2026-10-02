@@ -7,6 +7,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('/node_modules/three/') || id.includes('/node_modules/gsap/'))
+            return 'galaxy';
           if (id.includes('/node_modules/zrender/')) return 'render';
           if (id.includes('/node_modules/echarts/')) return 'charts';
           if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/'))
