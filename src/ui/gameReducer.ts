@@ -1,11 +1,11 @@
-import { CARDS, drawHand } from '../engine/cards';
+import { CARDS, drawHand, validateAction } from '../engine/cards';
 import { initialChronicle } from '../engine/campaign';
 import { step } from '../engine/dynamics';
 import { describeEvent, turnHeadline } from '../engine/flavor';
 import { revealForecast } from '../engine/forecast';
 import { DEFAULT_PARAMS, TOTAL_TURNS, type Params } from '../engine/params';
 import { Rng, stream } from '../engine/rng';
-import { previewStoryChoice, storyEvent, storyUnavailable } from '../engine/story';
+import { previewStoryChoice, storyBudget, storyEvent, storyUnavailable } from '../engine/story';
 import {
   counts,
   type Action,
@@ -19,6 +19,8 @@ import {
   type World,
 } from '../engine/types';
 import { generateWorld, initialState } from '../engine/worldgen';
+import { initialStrategy } from '../engine/strategy';
+import type { DecadeChapter } from '../engine/decade';
 import type { LogEntry } from './EventLog';
 import { turnOutcome, type TurnOutcome } from './turnOutcome';
 
@@ -36,6 +38,7 @@ export interface Session {
   events: Event[];
   finalContext: { state: State; action: Action } | null;
   lastOutcome: TurnOutcome | null;
+  chapters: DecadeChapter[];
 }
 export interface Game {
   session: Session | null;
@@ -87,12 +90,13 @@ export function emptyGame(tutorialDone = false): Game {
   };
 }
 export function createSession(seed: string, n: number, params: Params): Session {
-  const world = generateWorld(seed, { n });
+  const world = generateWorld(seed, { n, atlas: params.atlas });
   return {
     world,
     state: {
       ...initialState(world),
       ...(params.campaign ? { chronicle: initialChronicle() } : {}),
+      ...(params.strategic ? { strategic: initialStrategy(world) } : {}),
     },
     params: { ...params },
     reality: stream(seed, 'reality'),
@@ -105,6 +109,7 @@ export function createSession(seed: string, n: number, params: Params): Session 
     events: [],
     finalContext: null,
     lastOutcome: null,
+    chapters: [],
   };
 }
 
@@ -116,7 +121,7 @@ export function advanceSession(
   restoredReveal?: Reveal,
 ): { session: Session; reveal: Reveal; muleEvent: boolean } {
   const { world, state, params } = session;
-  if (state.turn >= TOTAL_TURNS || !drawHand(world, state.turn).includes(action.card))
+  if (state.turn >= TOTAL_TURNS || !drawHand(world, state.turn, params).includes(action.card))
     throw new Error('该行动不在当前手牌中');
   const reality = session.reality.clone(),
     calibration = session.calibration.clone();
@@ -163,6 +168,7 @@ export function advanceSession(
     });
   if (!result.events.length)
     logs.push({ turn: next.turn, text: '这十年没有星区改变状态。暗流仍在积累。' });
+  const outcome = turnOutcome(world, state, action, result);
   return {
     reveal,
     muleEvent: result.muleEvent,
@@ -195,7 +201,8 @@ export function advanceSession(
       logs: [...session.logs, ...logs],
       events: result.events,
       finalContext: next.turn === TOTAL_TURNS ? { state, action: { ...action } } : null,
-      lastOutcome: turnOutcome(world, state, action, result),
+      lastOutcome: outcome,
+      chapters: [...session.chapters, outcome.chapter],
     },
   };
 }
@@ -210,6 +217,8 @@ export function gameReducer(game: Game, event: GameAction): Game {
             ...DEFAULT_PARAMS,
             mule: event.mule,
             campaign: true,
+            strategic: true,
+            atlas: true,
           }),
           status: 'playing',
           tutorialStep: game.tutorialDone ? null : 0,
@@ -256,9 +265,13 @@ export function gameReducer(game: Game, event: GameAction): Game {
         const unavailable = storyUnavailable(s.state, option);
         if (unavailable) throw new Error(unavailable);
         previewStoryChoice(s.world, s.state, dispatch!, event.choice);
+        if (s.params.strategic) validateAction(s.world, storyBudget(s.state, option), game.action);
         return {
           ...game,
-          action: { card: 'noop', eventChoice: event.choice },
+          action: {
+            ...(s.params.strategic ? game.action : { card: 'noop' as const }),
+            eventChoice: event.choice,
+          },
           reveal: null,
           revealedForecast: null,
           muleRevealed: false,

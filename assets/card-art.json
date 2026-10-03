@@ -1,0 +1,77 @@
+{
+  "generator": "Built-in imagegen",
+  "format": "WebP, 1536 x 1024, encoded at quality 82 from separate generated PNG originals",
+  "map": {
+    "path": "public/maps/galactic-administration-reference.jpg",
+    "source": "User-supplied photograph, unchanged; runtime viewport crops to the printed map",
+    "rights": "Confirm permission for the photograph and underlying map before public release",
+    "coordinates": "Approximate playable anchors reconstructed from the photograph, not exact astronomical coordinates"
+  },
+  "cards": [
+    {
+      "id": "academy",
+      "path": "public/cards/academy.webp",
+      "prompt": "Use case: stylized-concept. Asset type: game strategy-card illustration for a Chinese galactic civilization game inspired by the Foundation universe. Create a single wide landscape painting for the card 'Fund the Academy': a monumental futuristic academy and library on a populated alien world, ivory architecture, turquoise illuminated windows, scientists quietly walking across terraces, star-filled violet sky. Detailed painterly science-fiction book-cover art, readable architectural silhouette at thumbnail size, dignified and hopeful, turquoise and silver accented with soft gold. Wide landscape aspect ratio 3:2. Illustration only, no card frame, no writing, no letters, no logos, no watermark."
+    },
+    {
+      "id": "religion",
+      "path": "public/cards/religion.webp",
+      "prompt": "Use case: stylized-concept. Game strategy-card illustration, 'Science missionaries': a lone scientist-priest in a teal cloak activating a radiant fusion reactor in a remote alien temple, inhabitants gathered in respectful wonder, a huge crescent moon and scarlet nebula outside. Painterly science-fiction book cover, dignified and mysterious, teal and crimson, strong thumbnail-readable silhouette, wide landscape 3:2. Illustration only, no card frame, no writing, no letters, no logo, no watermark."
+    },
+    {
+      "id": "elites",
+      "path": "public/cards/elites.webp",
+      "prompt": "Use case: stylized-concept. A single wide 3:2 landscape strategy-game illustration 'Resettle the elites': civil servants and scholars arriving with trunks at a sunlit futuristic orbital university campus, immense glass-domed buildings, emerald gardens, white shuttle landing in the distance. Human faces small, elegant science-fiction book-cover painting, hopeful but politically tense, silver emerald coral palette, distinct from temple imagery. Illustration only, no frame, no writing, no logos or watermark."
+    },
+    {
+      "id": "tax",
+      "path": "public/cards/tax.webp",
+      "prompt": "Use case: stylized-concept. Single landscape 3:2 science-fiction game card 'Tax relief': bustling interstellar market plaza beneath immense ivory arcades, ordinary humans selling produce and spare machine parts, a benevolent imperial official listening to a trader, hovering cargo transport above, sunlit mint stone and terracotta awnings with silver highlights. Detailed painterly book-cover art, thumbnail-readable market silhouette. No text, no letters, no numerals, no card frame, no logos, no watermark."
+    },
+    {
+      "id": "reform",
+      "path": "public/cards/reform.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 game card 'Administrative reform': an immense circular galactic senate chamber seen from above and behind a small human statesperson, concentric rows of seats, a clear pale-green holographic galaxy floating centrally, immense black-and-silver architecture with warm white lighting and subtle burgundy accents. Political tension, mature painterly science-fiction book-cover style, composition readable at small card size. No text, no numbers, no letters, no card frame, no logos, no watermark."
+    },
+    {
+      "id": "foundation",
+      "path": "public/cards/foundation.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 science-fiction strategy-card 'Build the Foundation': a newly built knowledge-preservation outpost on remote Terminus, large silver archive domes and orderly antenna towers on a rugged green-grey alien plain, small human engineers beside an arriving spacecraft, immense ringed planet over the horizon. Hopeful resilient mood, painterly science-fiction novel-cover quality, turquoise, green-grey and soft sunset red, crisp readable silhouette. No text, no letters, no card frame, no logos, no watermark."
+    },
+    {
+      "id": "noop",
+      "path": "public/cards/noop.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 strategy-game card 'Wait and observe': a solitary human archivist seated at a quiet star observatory desk, seen from behind, an immense observation window looking directly at a luminous spiral galaxy, an unlit brass instrument and carefully stacked closed books, moonlit silver, deep teal, soft white stellar light, contemplative painterly science-fiction novel-cover style. Readable silhouette at thumbnail size. No writing on books, no text, no numbers, no frame, no logos, no watermark."
+    },
+    {
+      "id": "relief",
+      "path": "public/cards/relief.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 strategy-game card 'Emergency food relief': massive white humanitarian cargo spacecraft unloading sealed food crates into a remote spaceport, human workers and families beside an orderly distribution station, visibly green agricultural cargo containers, red alien canyon beyond, mint-white hulls and warm red rock. Painterly science-fiction book-cover illustration, compassionate serious tone, clear ship and supply silhouettes. No text, no letters, no numbers, no card frame, no logos, no watermark."
+    },
+    {
+      "id": "convoy",
+      "path": "public/cards/convoy.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 game card 'Convoy escort': a long silver merchant freighter flanked by two elegant angular patrol ships crossing a luminous interstellar jump gate, view from above and behind, recognizable silhouettes, cyan engine trails, pale green moon and deep crimson nebula beyond. Detailed painterly science-fiction book-cover art, restrained epic tone, steel-white teal and crimson. No writing, no logos, no numbers, no card frame, no watermark."
+    },
+    {
+      "id": "trade",
+      "path": "public/cards/trade.webp",
+      "prompt": "Use case: stylized-concept. Single landscape 3:2 game card 'Interstellar trade': a grand orbital commercial dock above a bright jade-green world, diverse elegant merchant spacecraft lined along illuminated docking arms, humans exchanging a small technological artifact in the foreground, cyan cargo lifts and crimson fabric accents. A prosperous connected civilization, mature detailed painterly science-fiction novel-cover style, silver, emerald and crimson, readable at thumbnail size. No text, no logos, no numerals, no card frame, no watermark."
+    },
+    {
+      "id": "diplomacy",
+      "path": "public/cards/diplomacy.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 game card 'Frontier mediation': two human delegations in distinct green and red ceremonial clothes meeting across a round silver table, a neutral mediator between them, immense clear window overlooking an alien frontier city's spaceport and a pale crescent planet. Thoughtful political science fiction, painterly book-cover illustration, white architecture, jade, burgundy and muted gold, diplomatic hands and readable composition. No text, no letters, no emblems, no card frame, no watermark."
+    },
+    {
+      "id": "intelligence",
+      "path": "public/cards/intelligence.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 game card 'Second Foundation intelligence network': a cloaked human intelligence analyst in a quiet orbital observatory studying a crystal star-coordinate instrument, delicate luminous cyan network points suspended above a polished silver desk, tall windows reveal a bright pearl-white planet and purple-red nebula. Mysterious and contemplative, detailed painterly science-fiction book-cover art, cyan, ivory, subtle violet, clear silhouette for small card size. No text, no letters, no numerical labels, no frame, no logos, no watermark."
+    },
+    {
+      "id": "evacuation",
+      "path": "public/cards/evacuation.webp",
+      "prompt": "Use case: stylized-concept. Single wide landscape 3:2 game card 'Evacuate the archives': human librarians and engineers carrying compact luminous data crystals and carefully wrapped books from a vast futuristic library into a silver evacuation shuttle, immense bookshelves and tall white stone columns behind them, distant red storm visible through the hangar opening. Preserve knowledge during a crisis, solemn but hopeful, painterly science-fiction novel-cover illustration, jade data lights, ivory and burgundy. No readable text on books, no writing, no numbers, no frame, no logos, no watermark."
+    }
+  ]
+}

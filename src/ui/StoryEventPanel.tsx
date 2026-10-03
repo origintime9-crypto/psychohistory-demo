@@ -1,68 +1,66 @@
-import { storyUnavailable, type StoryEvent } from '../engine/story';
-import type { State, StoryChoiceId } from '../engine/types';
-import { BOOKS, STORY_SOURCES } from '../engine/books';
+import { MapPin, Send, LoaderCircle } from 'lucide-react';
+import { storyBudget, storyUnavailable, type StoryEvent } from '../engine/story';
+import { actionUnavailable } from '../engine/cards';
+import type { Action, State, StoryChoiceId, World } from '../engine/types';
+import { BOOKS } from '../engine/books';
+
+const VOICES: Record<StoryChoiceId, string> = {
+  aid: '“这件事不能再等了。按我的回复去办。”',
+  bargain: '“把这份安排送给他们。这是我现在能够作出的决定。”',
+  defer: '“先按现有安排处理，继续把消息送来。”',
+};
+
 export default function StoryEventPanel({
   event,
   state,
+  world,
   selected,
   disabled,
+  pending,
+  planned,
   onSelect,
   onFocus,
 }: {
   event: StoryEvent;
   state: State;
+  world: World;
   selected?: StoryChoiceId;
   disabled: boolean;
+  pending?: boolean;
+  planned?: Action;
   onSelect: (choice: StoryChoiceId) => void;
   onFocus: (sector: number) => void;
 }) {
   return (
-    <section className="story-event" aria-label="本回合事件">
+    <section className="story-event immersive-event" aria-label="本回合事件">
       <div className="story-letter">
         <div className="eyebrow">
           <span className="dispatch-dot" />
-          收到一封急电 <span>{event.sender}</span>
+          {event.sender} · 来信
         </div>
         <h2>{event.title}</h2>
         {event.source && (
           <div className="story-source">
             <span>
-              《{BOOKS[event.source.book].title}》· {event.source.chapter}
+              《{BOOKS[event.source.book].title}》 · {event.source.chapter}
             </span>
             <small>{event.source.characters.join(' / ')}</small>
-            <details>
-              <summary>原著线索与改编</summary>
-              <p>
-                {event.source.note} 本事件的选择和数值为游戏改编。
-                <a href={BOOKS[event.source.book].url} target="_blank" rel="noreferrer">
-                  书目 ↗
-                </a>
-                {event.source.book in STORY_SOURCES && (
-                  <a
-                    href={STORY_SOURCES[event.source.book as keyof typeof STORY_SOURCES]}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    情节参考（含剧透）↗
-                  </a>
-                )}
-              </p>
-            </details>
           </div>
         )}
         <p>{event.body}</p>
-        <div className="story-context">
-          <button className="text-button" onClick={() => onFocus(event.target)}>
-            定位 {event.location} ↗
-          </button>
-          <span>{event.why}</span>
-        </div>
+        <button className="text-button location-command" onClick={() => onFocus(event.target)}>
+          <MapPin size={15} />
+          {event.location}
+        </button>
       </div>
       <div className="story-decisions">
-        <span className="eyebrow">先回应事件 · 然后选择本回合命令</span>
+        <span className="eyebrow">你的回应</span>
         <div>
           {event.choices.map((option, i) => {
-            const unavailable = storyUnavailable(state, option);
+            const budget = storyBudget(state, option);
+            const unavailable =
+              storyUnavailable(state, option) ??
+              (planned ? actionUnavailable(world, budget, planned.card) : null);
             return (
               <button
                 key={option.id}
@@ -74,25 +72,25 @@ export default function StoryEventPanel({
                 <span className="choice-index">0{i + 1}</span>
                 <div>
                   <b>{option.label}</b>
-                  <p>{option.description}</p>
-                  {option.future && (
-                    <span className="story-future">后续影响 · {option.future}</span>
-                  )}
-                  {option.chance && (
-                    <em>{Math.round(option.chance * 100)}% 成功 · 失败也会消耗资源</em>
-                  )}
+                  <p>{VOICES[option.id]}</p>
                   {unavailable && <small>{unavailable}</small>}
                 </div>
-                <span className="choice-check">{selected === option.id ? '✓' : '→'}</span>
+                <span className="choice-check">
+                  {pending && selected === option.id ? (
+                    <LoaderCircle className="spinning" size={17} />
+                  ) : (
+                    <Send size={17} />
+                  )}
+                </span>
               </button>
             );
           })}
         </div>
-        <p className="event-choice-status" aria-live="polite">
-          {selected
-            ? '回应已安排，推进十年时执行。可继续选择一张干预卡；两项行动共享影响力与国库。'
-            : '还未选择回应。每个选项都有实际后果，保留资源也会让问题继续积累。'}
-        </p>
+        {pending && (
+          <p className="event-choice-status" role="status">
+            急电已发出。十年，正在成为历史。
+          </p>
+        )}
       </div>
     </section>
   );

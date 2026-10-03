@@ -8,6 +8,7 @@ import type { StoryEvent } from '../engine/story';
 import { BOOKS } from '../engine/books';
 import type { Action, Event, State, StepResult, World } from '../engine/types';
 import { initialState } from '../engine/worldgen';
+import { initialStrategy } from '../engine/strategy';
 
 export interface ArchiveFrame {
   state: State;
@@ -41,6 +42,7 @@ export function storyReference(event: StoryEvent | null | undefined) {
 export function galaxyArchive(world: World, params: Params, actions: Action[]): ArchiveFrame[] {
   const reality = stream(world.seed, 'reality');
   let state = initialState(world);
+  if (params.strategic) state.strategic = initialStrategy(world);
   if (params.campaign) state.chronicle = initialChronicle();
   const frames: ArchiveFrame[] = [{ state, events: [] }];
   for (const action of actions) {

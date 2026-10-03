@@ -1,7 +1,9 @@
 import { CARDS } from '../engine/cards';
+import { decadeChapter, type DecadeChapter } from '../engine/decade';
 import { counts, type Action, type State, type StepResult, type World } from '../engine/types';
 
 export interface TurnOutcome {
+  chapter: DecadeChapter;
   turn: number;
   command: string;
   target: string | null;
@@ -78,6 +80,7 @@ export function turnOutcome(
       });
   }
   return {
+    chapter: decadeChapter(world, before, action, result),
     turn: result.state.turn,
     command: CARDS[action.card].name,
     target: action.target === undefined ? null : world.names[action.target],

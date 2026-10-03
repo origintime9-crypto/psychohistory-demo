@@ -1,6 +1,7 @@
 import { Delaunay } from 'd3-delaunay';
 import { Rng, stream } from './rng';
 import { clamp, type State, type World } from './types';
+import { atlasAnchor, ATLAS_STARS } from './atlas';
 const NAMES = [
   '赫利孔',
   '安纳克里昂',
@@ -23,10 +24,15 @@ const NAMES = [
   '斯特雷',
   '奥尼克斯',
 ];
-export function generateWorld(seed: string | number, { n }: { n: number }): World {
+export function generateWorld(
+  seed: string | number,
+  { n, atlas }: { n: number; atlas?: boolean },
+): World {
   if (!Number.isInteger(n) || n < 3 || n > 200) throw new Error('星区数量必须为 3–200 的整数');
   const rng = stream(seed, 'map');
-  const points: [number, number][] = [[0, 0]];
+  const points: [number, number][] = atlas
+    ? Array.from({ length: n }, (_, i) => atlasAnchor(i))
+    : [[0, 0]];
   const minDistance = 1.08 / Math.sqrt(n);
   for (let attempt = 0; points.length < n && attempt < 100000; attempt++) {
     const radius = Math.sqrt(rng.uniform()),
@@ -81,15 +87,18 @@ export function generateWorld(seed: string | number, { n }: { n: number }): Worl
   const weights = Float64Array.from({ length: n }, () => 0.7 + 0.6 * rng.uniform());
   const total = weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < n; i++) weights[i] /= total;
-  const terminus = distance.indexOf(Math.max(...distance));
+  const terminus = atlas ? 1 : distance.indexOf(Math.max(...distance));
   const names = Array.from({ length: n }, (_, i) =>
-    i === 0
-      ? '川陀'
-      : i === terminus
-        ? '端点星'
-        : `${NAMES[(i - 1) % NAMES.length]}${i > NAMES.length ? ` ${Math.floor(i / NAMES.length) + 1}` : ''}`,
+    atlas
+      ? `${ATLAS_STARS[i % ATLAS_STARS.length][0]}${i >= ATLAS_STARS.length ? ` ${Math.floor(i / ATLAS_STARS.length) + 1}` : ''}`
+      : i === 0
+        ? '川陀'
+        : i === terminus
+          ? '端点星'
+          : `${NAMES[(i - 1) % NAMES.length]}${i > NAMES.length ? ` ${Math.floor(i / NAMES.length) + 1}` : ''}`,
   );
   return {
+    ...(atlas ? { layout: 'atlas' as const } : {}),
     seed: String(seed),
     n,
     x,

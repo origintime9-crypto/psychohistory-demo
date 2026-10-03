@@ -4,6 +4,8 @@ import { campaignEvent, initialChronicle } from './campaign';
 import type { LegacyField } from './types';
 import type { BookId } from './books';
 import { clamp, cloneState, counts, type State, type StoryChoiceId, type World } from './types';
+import { STRATEGIC_KEYS } from './types';
+import { impactTargets } from './strategy';
 
 type LocalField =
   | 'prosperity'
@@ -30,6 +32,8 @@ export interface StoryChoice {
   cost: { influence?: number; treasury?: number };
   effect: Effect;
   chance?: number;
+  baseChance?: number;
+  chanceFactors?: { label: string; value: number }[];
   failure?: Effect;
   result: string;
   failureResult?: string;
@@ -58,7 +62,7 @@ const choice = (
 ): StoryChoice => ({ id, label, description, cost, effect, result, ...extra });
 
 /** Current dispatch is visible. Future dispatches are sampled from another stream by forecasts. */
-export function storyEvent(
+function baseStoryEvent(
   world: World,
   s: State,
   p: Params = DEFAULT_PARAMS,
@@ -410,10 +414,57 @@ export function storyEvent(
   }
 }
 
+export function storyEvent(
+  world: World,
+  s: State,
+  p: Params = DEFAULT_PARAMS,
+  seed = world.seed,
+): StoryEvent | null {
+  const event = baseStoryEvent(world, s, p, seed);
+  if (!event || !p.strategic || !s.strategic) return event;
+  const i = event.target;
+  const factors = [
+    { label: '地方信任', value: 0.7 * (s.legitimacy[i] - 0.5) },
+    { label: '帝国治理', value: 0.5 * (s.governance - 0.5) },
+    { label: '派系阻力', value: -0.6 * s.faction[i] },
+    { label: '情报支撑', value: 0.9 * s.strategic.intelligence[i] },
+    { label: '贸易关系', value: 0.45 * s.strategic.trade[i] },
+    { label: '当地危机', value: -0.18 * s.phase[i] },
+  ];
+  const correction = factors.reduce((v, factor) => v + factor.value, 0);
+  return {
+    ...event,
+    why: `本地合法性 ${pct(s.legitimacy[i])} · 派系化 ${pct(s.faction[i])} · 情报 ${pct(s.strategic.intelligence[i])} · 贸易 ${pct(s.strategic.trade[i])}。局部效果沿可达航线衰减传导，独立星区不参与中转。`,
+    choices: event.choices.map((option) => {
+      if (option.chance === undefined || option.chance <= 0 || option.chance >= 1) return option;
+      const logOdds = Math.log(option.chance / (1 - option.chance));
+      return {
+        ...option,
+        baseChance: option.chance,
+        chanceFactors: factors,
+        chance: clamp(1 / (1 + Math.exp(-(logOdds + correction))), 0.08, 0.96),
+      };
+    }),
+  };
+}
+
 export function storyUnavailable(s: State, option: StoryChoice): string | null {
   if (s.influence < (option.cost.influence ?? 0)) return '影响力不足';
   if (s.treasury + 1e-9 < (option.cost.treasury ?? 0)) return '国库不足';
   return null;
+}
+export function storyBudget(s: State, option: StoryChoice): State {
+  const minimum = (field: 'influence' | 'treasury') =>
+    option.chance === undefined || option.chance >= 1
+      ? (option.effect[field] ?? 0)
+      : option.chance <= 0
+        ? (option.failure?.[field] ?? 0)
+        : Math.min(option.effect[field] ?? 0, option.failure?.[field] ?? 0);
+  return {
+    ...s,
+    influence: Math.min(8, s.influence - (option.cost.influence ?? 0) + minimum('influence')),
+    treasury: clamp(clamp(s.treasury - (option.cost.treasury ?? 0)) + minimum('treasury')),
+  };
 }
 export function applyStoryChoice(
   world: World,
@@ -441,10 +492,7 @@ export function applyStoryChoice(
   s.treasury = clamp(s.treasury + (effect.treasury ?? 0));
   s.governance = clamp(s.governance + (effect.governance ?? 0));
   s.influence = Math.min(8, s.influence + (effect.influence ?? 0));
-  for (const [i, weight] of [
-    [event.target, 1],
-    ...world.neighbors[event.target].map((i) => [i, 0.5]),
-  ]) {
+  for (const [i, weight] of impactTargets(world, input, event.target)) {
     if (s.phase[i] === 3) continue;
     for (const [key, value] of Object.entries(effect.local ?? {})) {
       const field = key as LocalField;
@@ -496,5 +544,10 @@ export function previewStoryChoice(
     for (const key of ['diplomacy', 'trade', 'secrecy'] as const)
       win.chronicle[key] =
         win.chronicle[key] * option.chance + loss.chronicle[key] * (1 - option.chance);
+  if (win.strategic && loss.strategic)
+    for (const key of STRATEGIC_KEYS)
+      for (let i = 0; i < world.n; i++)
+        win.strategic[key][i] =
+          win.strategic[key][i] * option.chance + loss.strategic[key][i] * (1 - option.chance);
   return win;
 }

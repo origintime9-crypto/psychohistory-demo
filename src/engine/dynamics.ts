@@ -3,7 +3,8 @@ import { neighborhood, transitionProbabilities } from './hazard';
 import { DEFAULT_PARAMS, type Params } from './params';
 import { Rng } from './rng';
 import { muleTurn } from './mule';
-import { applyStoryChoice, storyEvent, storyUnavailable } from './story';
+import { advanceStrategy } from './strategy';
+import { applyStoryChoice, storyBudget, storyEvent, storyUnavailable } from './story';
 import {
   clamp,
   cloneState,
@@ -29,18 +30,18 @@ export function step(
   const dispatch = storyEvent(world, input, p, options.storySeed);
   if (!dispatch && action.eventChoice !== undefined) throw new Error('当前回合没有该事件');
   let influence = input.influence;
+  let treasury = input.treasury;
   if (dispatch) {
     const option = dispatch.choices.find((c) => c.id === (action.eventChoice ?? 'defer'));
     if (!option) throw new Error('未知事件选项');
     const unavailable = storyUnavailable(input, option);
     if (unavailable) throw new Error(unavailable);
-    const gain = option.chance
-      ? Math.min(option.effect.influence ?? 0, option.failure?.influence ?? 0)
-      : (option.effect.influence ?? 0);
-    influence = Math.min(8, influence - (option.cost.influence ?? 0) + gain);
+    const budget = storyBudget(input, option);
+    influence = budget.influence;
+    treasury = budget.treasury;
   }
   // Costs and phases are known before any stochastic outcome. Validation consumes no RNG.
-  validateAction(world, { ...input, influence }, action);
+  validateAction(world, { ...input, influence, treasury }, action);
   const reformDraw = rng.uniform();
   const [shockNormal] = rng.normalPair();
   const shockDraw = rng.uniform();
@@ -82,13 +83,26 @@ export function step(
       rebellion = to === 2 ? 1 : 0;
     const [c] = neighborhood(world, s, i, p);
     const geff = s.governance * Math.exp(-world.distance[i] / 0.8);
+    const strategic = p.strategic ? s.strategic : undefined;
     const eps = (k: number) => p.driftNoise * noise[k];
     const pressure =
-      relax(s.pressure[i], p.pressureTarget, 0.15, eps(0)) - 0.03 * unrest - 0.08 * rebellion;
+      relax(
+        s.pressure[i],
+        p.pressureTarget - (strategic ? 0.13 * strategic.supply[i] : 0),
+        0.15,
+        eps(0),
+      ) -
+      0.03 * unrest -
+      0.08 * rebellion;
     const prosperity =
       relax(
         s.prosperity[i],
-        1.1 - 0.7 * s.pressure[i] - 0.3 * (s.tax - 0.2) - 0.2 * (1 - s.treasury) + s.education[i],
+        1.1 -
+          0.7 * s.pressure[i] -
+          0.3 * (s.tax - 0.2) -
+          0.2 * (1 - s.treasury) +
+          s.education[i] +
+          (strategic ? 0.15 * strategic.trade[i] + 0.08 * (strategic.supply[i] - 0.5) : 0),
         0.4,
         eps(1),
       ) -
@@ -103,7 +117,10 @@ export function step(
     );
     const faction = relax(
       s.faction[i],
-      s.elites[i] + 0.2 * c - (p.religionFaction ?? 0.3) * s.religion[i],
+      s.elites[i] +
+        0.2 * c -
+        (p.religionFaction ?? 0.3) * s.religion[i] -
+        (strategic ? 0.16 * strategic.autonomy[i] : 0),
       0.3,
       eps(3),
     );
@@ -141,7 +158,10 @@ export function step(
         s.tax *
         world.weights[i] *
         s.prosperity[i] *
-        (phase === 0 ? 1 : phase === 1 ? 0.6 : phase === 2 ? 0.1 : 0);
+        (phase === 0 ? 1 : phase === 1 ? 0.6 : phase === 2 ? 0.1 : 0) *
+        (p.strategic && s.strategic
+          ? (1 + 0.18 * s.strategic.trade[i]) * (1 - 0.3 * s.strategic.autonomy[i])
+          : 1);
       expense += p.expense * world.weights[i] * (0.6 + 0.4 * world.distance[i]);
     }
     const c = counts(s);
@@ -154,6 +174,7 @@ export function step(
       0,
     );
   }
+  if (p.strategic) advanceStrategy(world, s);
   s.reform *= 0.97;
   if (s.taxReliefTurns > 0) {
     s.taxReliefTurns--;

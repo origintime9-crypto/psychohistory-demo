@@ -4,11 +4,13 @@ import {
   counts,
   type Action,
   type CardId,
+  type LegacyCardId,
   type State,
   type World,
 } from './types';
 import { stream } from './rng';
 import { DEFAULT_PARAMS, type Params } from './params';
+import { impactTargets } from './strategy';
 export interface Card {
   id: CardId;
   name: string;
@@ -19,7 +21,7 @@ export interface Card {
   downside: string;
   symbol: string;
 }
-export const CARDS: Record<CardId, Card> = {
+export const LEGACY_CARDS: Record<LegacyCardId, Card> = {
   academy: {
     id: 'academy',
     name: '资助学院',
@@ -91,21 +93,106 @@ export const CARDS: Record<CardId, Card> = {
     symbol: '—',
   },
 };
+export const CARDS: Record<CardId, Card> = {
+  ...LEGACY_CARDS,
+  relief: {
+    id: 'relief',
+    name: '紧急粮运',
+    short: '解除补给危机',
+    cost: 2,
+    targeted: true,
+    effect: '补给 +32%，人口压力 −14%，繁荣 +7%；沿航线衰减传导。',
+    downside: '国库 −3.5%；重复干预受当地疲劳影响。',
+    symbol: '◇',
+  },
+  convoy: {
+    id: 'convoy',
+    name: '护航航线',
+    short: '维持星际运输',
+    cost: 2,
+    targeted: true,
+    effect: '补给 +20%，驻军 +13%，贸易 +8%；叛乱中转星区削弱传导。',
+    downside: '国库 −2.5%；驻军与补给随回合衰减。',
+    symbol: '◇',
+  },
+  trade: {
+    id: 'trade',
+    name: '星际商贸',
+    short: '连接边疆市场',
+    cost: 2,
+    targeted: true,
+    effect: '贸易 +24%，繁荣 +8%；贸易持续支持补给、生产和税收。',
+    downside: '国库 −1.5%，精英过剩 +3.5%。',
+    symbol: '◇',
+  },
+  diplomacy: {
+    id: 'diplomacy',
+    name: '边疆调停',
+    short: '以自治换取和平',
+    cost: 2,
+    targeted: true,
+    effect: '合法性 +16%，派系化 −13%，自治 +18%；自治降低分离风险。',
+    downside: '国库 −1%；自治降低当地税收。',
+    symbol: '◇',
+  },
+  intelligence: {
+    id: 'intelligence',
+    name: '第二基地情报网',
+    short: '提前化解冲击',
+    cost: 3,
+    targeted: true,
+    effect: '情报 +32%，派系化 −10%；降低风险与冲击暴露，提高事件成功率。',
+    downside: '国库 −2.5%，开放度 −4%；情报每回合保留 90%。',
+    symbol: '◇',
+  },
+  evacuation: {
+    id: 'evacuation',
+    name: '档案撤离',
+    short: '保存文明的记忆',
+    cost: 2,
+    targeted: true,
+    effect: '按当地知识与危机程度推进基地；人口压力 −8%。',
+    downside: '国库 −2%，当地教育 −4.5%；高进度时收益递减。',
+    symbol: '◇',
+  },
+};
 export const CARD_IDS = Object.keys(CARDS).filter((k) => k !== 'noop') as CardId[];
-export function drawHand(world: World, turn: number): CardId[] {
+export const LEGACY_CARD_IDS = Object.keys(LEGACY_CARDS).filter(
+  (k) => k !== 'noop',
+) as LegacyCardId[];
+export const CARD_TREASURY_COST: Partial<Record<CardId, number>> = {
+  relief: 0.035,
+  convoy: 0.025,
+  trade: 0.015,
+  diplomacy: 0.01,
+  intelligence: 0.025,
+  evacuation: 0.02,
+};
+const STRATEGIC_EFFECTS: Partial<Record<CardId, string>> = {
+  academy: '繁荣 +12%，人口压力 −5%，教育 +5%；沿可达航线衰减传导。',
+  religion: '宗教影响 +40%，派系化 −5%；传导强度取决于航线与当地开放度。',
+  elites: '精英过剩 −25%，派系化 −8%；沿可达航线衰减传导。',
+};
+export const cardEffect = (id: CardId, strategic = false) =>
+  strategic ? (STRATEGIC_EFFECTS[id] ?? CARDS[id].effect) : CARDS[id].effect;
+export function drawHand(world: World, turn: number, params?: Params): CardId[] {
   const rng = stream(world.seed, `deck:${turn}`);
-  const ids = CARD_IDS.map((id) => ({
-    id,
-    rank: -Math.log(Math.max(1e-12, rng.uniform())) / (id === 'foundation' ? 0.7 : 1),
-  }))
+  const ids = (params?.strategic ? CARD_IDS : LEGACY_CARD_IDS)
+    .map((id) => ({
+      id,
+      rank: -Math.log(Math.max(1e-12, rng.uniform())) / (id === 'foundation' ? 0.7 : 1),
+    }))
     .sort((a, b) => a.rank - b.rank)
     .map((x) => x.id);
-  return [...ids.slice(0, 3), 'noop'];
+  return [...ids.slice(0, params?.strategic ? 5 : 3), 'noop'];
 }
 export function validateAction(world: World, s: State, action: Action): void {
   const card = CARDS[action.card];
-  if (!card) throw new Error('未知干预卡');
+  if (!Object.hasOwn(CARDS, action.card)) throw new Error('未知干预卡');
+  if (!Object.hasOwn(LEGACY_CARDS, action.card) && !s.strategic)
+    throw new Error('该卡牌仅在新版推演中可用');
   if (s.influence < card.cost) throw new Error('影响力不足');
+  if (s.treasury + 1e-12 < (CARD_TREASURY_COST[action.card] ?? 0)) throw new Error('国库不足');
   if (action.card === 'tax' && s.taxReliefTurns > 0) throw new Error('减税仍在生效，不能叠加');
   if (
     card.targeted &&
@@ -131,11 +218,11 @@ export function applyAction(
   let reformFailed = false;
   if (card.targeted) {
     const target = action.target!;
-    const targets: [number, number][] = [
-      [target, 1],
-      ...world.neighbors[target].map((i) => [i, 0.5] as [number, number]),
-    ];
-    for (const [i, weight] of targets) {
+    const targets = impactTargets(world, s, target);
+    const fatigue = s.strategic?.fatigue[target] ?? 0;
+    const efficiency = Object.hasOwn(LEGACY_CARDS, action.card) ? 1 : 1 / (1 + 0.9 * fatigue);
+    for (const [i, transmission] of targets) {
+      const weight = transmission * efficiency;
       if (s.phase[i] === 3) continue;
       if (action.card === 'academy') {
         s.prosperity[i] = clamp(s.prosperity[i] + 0.12 * weight);
@@ -153,7 +240,44 @@ export function applyAction(
         s.elites[i] = clamp(s.elites[i] - 0.25 * weight);
         s.faction[i] = clamp(s.faction[i] - 0.08 * weight);
       }
+      const a = s.strategic;
+      if (a) {
+        if (action.card === 'relief') {
+          a.supply[i] = clamp(a.supply[i] + 0.32 * weight);
+          s.pressure[i] = clamp(s.pressure[i] - 0.14 * weight);
+          s.prosperity[i] = clamp(s.prosperity[i] + 0.07 * weight);
+        } else if (action.card === 'convoy') {
+          a.supply[i] = clamp(a.supply[i] + 0.2 * weight);
+          a.trade[i] = clamp(a.trade[i] + 0.08 * weight);
+          s.garrison[i] = clamp(s.garrison[i] + 0.13 * weight);
+        } else if (action.card === 'trade') {
+          a.trade[i] = clamp(a.trade[i] + 0.24 * weight);
+          s.prosperity[i] = clamp(s.prosperity[i] + 0.08 * weight);
+          s.elites[i] = clamp(s.elites[i] + 0.035 * weight);
+        } else if (action.card === 'diplomacy') {
+          a.autonomy[i] = clamp(a.autonomy[i] + 0.18 * weight);
+          s.legitimacy[i] = clamp(s.legitimacy[i] + 0.16 * weight);
+          s.faction[i] = clamp(s.faction[i] - 0.13 * weight);
+        } else if (action.card === 'intelligence') {
+          a.intelligence[i] = clamp(a.intelligence[i] + 0.32 * weight);
+          s.faction[i] = clamp(s.faction[i] - 0.1 * weight);
+          s.openness[i] = clamp(s.openness[i] - 0.04 * weight);
+        } else if (action.card === 'evacuation') {
+          s.pressure[i] = clamp(s.pressure[i] - 0.08 * weight);
+          s.education[i] = clamp(s.education[i] - 0.045 * weight);
+        }
+        if (!Object.hasOwn(LEGACY_CARDS, action.card))
+          a.fatigue[i] = clamp(a.fatigue[i] + 0.22 * transmission);
+      }
     }
+    if (action.card === 'evacuation')
+      s.foundation = clamp(
+        s.foundation +
+          (0.025 + 0.055 * input.education[target] + 0.012 * input.phase[target]) *
+            efficiency *
+            (1 - 0.6 * s.foundation),
+      );
+    if (s.strategic) s.treasury = clamp(s.treasury - (CARD_TREASURY_COST[action.card] ?? 0));
     if (action.card === 'elites') s.treasury = clamp(s.treasury - params.eliteTreasuryCost);
   } else if (action.card === 'tax') {
     s.baseTax = s.tax;
@@ -193,7 +317,10 @@ export function terminusFactor(phase: number): number {
   return [1, 0.65, 0.35, 0.15][phase] ?? 0;
 }
 export function actionUnavailable(world: World, s: State, card: CardId): string | null {
+  if (!Object.hasOwn(CARDS, card)) return '未知干预卡';
+  if (!Object.hasOwn(LEGACY_CARDS, card) && !s.strategic) return '仅新版推演可用';
   if (s.influence < CARDS[card].cost) return '影响力不足';
+  if (s.treasury + 1e-12 < (CARD_TREASURY_COST[card] ?? 0)) return '国库不足';
   if (card === 'tax' && s.taxReliefTurns > 0) return `减负仍生效 ${s.taxReliefTurns} 回合`;
   if (CARDS[card].targeted && s.phase.every((v) => v === 3)) return '没有可选星区';
   return null;

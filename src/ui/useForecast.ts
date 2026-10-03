@@ -28,6 +28,8 @@ interface Result {
   error?: string;
 }
 interface View {
+  baselineKey: string;
+  previewKey: string;
   baseline: ForecastResult | null;
   baselineSession: number;
   preview: ForecastResult | null;
@@ -44,6 +46,8 @@ interface View {
   elapsed: number | null;
 }
 const emptyView = (): View => ({
+  baselineKey: '',
+  previewKey: '',
   baseline: null,
   baselineSession: 0,
   preview: null,
@@ -83,11 +87,16 @@ export function useForecast(
   const gate = useRef(new ResponseGate());
   const ids = useRef({ next: 0, session: 0, baseline: 0 });
   const started = useRef(new Map<number, number>());
+  const requestKeys = useRef(new Map<number, string>());
+  const keyFor = (requestAction: Action) =>
+    JSON.stringify([world?.seed, world?.n, world?.layout, state?.turn, requestAction, params]);
   const [view, setView] = useState<View>(emptyView);
   const send = (request: Omit<ForecastRequest, 'id' | 'session'>) => {
     const id = ++ids.current.next;
     gate.current.expect(request.kind, id);
     started.current.set(id, performance.now());
+    if (request.kind === 'baseline' || request.kind === 'preview')
+      requestKeys.current.set(id, keyFor(request.action));
     worker.current?.postMessage({ ...request, id, session: ids.current.session });
     return id;
   };
@@ -104,6 +113,8 @@ export function useForecast(
         return;
       }
       const elapsed = performance.now() - (started.current.get(r.id) ?? performance.now());
+      const requestKey = requestKeys.current.get(r.id) ?? '';
+      requestKeys.current.delete(r.id);
       if (r.done || r.kind !== 'hand' || r.error) started.current.delete(r.id);
       setView((previous) => {
         if (r.kind === 'hand')
@@ -130,6 +141,7 @@ export function useForecast(
           return {
             ...previous,
             baseline: r.forecast!,
+            baselineKey: requestKey,
             baselineSession: r.session,
             baselineBusy: false,
           };
@@ -137,6 +149,7 @@ export function useForecast(
           return {
             ...previous,
             preview: r.forecast!,
+            previewKey: requestKey,
             comparison: r.comparison!,
             previewBusy: false,
             elapsed,
@@ -157,6 +170,7 @@ export function useForecast(
       w.terminate();
       worker.current = null;
       started.current.clear();
+      requestKeys.current.clear();
     };
   }, []);
 
@@ -164,6 +178,7 @@ export function useForecast(
     ids.current.session++;
     gate.current.start(ids.current.session);
     started.current.clear();
+    requestKeys.current.clear();
     setView(emptyView());
     if (!world || !state || state.turn >= TOTAL_TURNS) return;
     setView((previous) => ({ ...previous, baselineBusy: true }));
@@ -267,9 +282,14 @@ export function useForecast(
     });
   }, [world, state, params, contrastParams, history, action.eventChoice]);
 
+  const activeMatches =
+    action.card === 'noop'
+      ? view.baselineKey === keyFor({ card: 'noop', eventChoice: action.eventChoice })
+      : view.previewKey === keyFor(action);
   return {
     ...view,
-    active: action.card === 'noop' ? view.baseline : view.preview,
+    activeMatches,
+    active: activeMatches ? (action.card === 'noop' ? view.baseline : view.preview) : null,
     comparison: action.card === 'noop' ? ZERO : view.comparison,
   };
 }

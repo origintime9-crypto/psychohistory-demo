@@ -4,6 +4,7 @@ import App from './ui/App';
 import './ui/styles.css';
 import './ui/galaxy.css';
 import './ui/campaign.css';
+import './ui/strategy.css';
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

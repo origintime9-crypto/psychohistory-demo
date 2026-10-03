@@ -8,7 +8,7 @@ import {
   type ForecastOptions,
 } from '../engine/forecast';
 import { DEFAULT_PARAMS, type Params } from '../engine/params';
-import { previewStoryChoice, storyEvent } from '../engine/story';
+import { previewStoryChoice, storyBudget, storyEvent } from '../engine/story';
 import type {
   Action,
   CardEstimate,
@@ -111,7 +111,11 @@ export function playableHand(q: ForecastRequest): CardId[] {
     storyEvent(q.world, q.state, q.params),
     q.action.eventChoice,
   );
-  return drawHand(q.world, q.state.turn).filter(
-    (card) => !actionUnavailable(q.world, eventState, card),
+  const event = storyEvent(q.world, q.state, q.params);
+  const choice = event?.choices.find((option) => option.id === (q.action.eventChoice ?? 'defer'));
+  const budget = choice ? storyBudget(q.state, choice) : q.state;
+  return drawHand(q.world, q.state.turn, q.params).filter(
+    (card) =>
+      !actionUnavailable(q.world, eventState, card) && !actionUnavailable(q.world, budget, card),
   );
 }

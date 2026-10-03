@@ -28,9 +28,9 @@ function expectedCrisis(world: World, s: State, p: Params): number {
   }
   return mean;
 }
-export function availableActions(world: World, s: State): Action[] {
+export function availableActions(world: World, s: State, p: Params = DEFAULT_PARAMS): Action[] {
   const actions: Action[] = [];
-  for (const card of drawHand(world, s.turn)) {
+  for (const card of drawHand(world, s.turn, p)) {
     if (actionUnavailable(world, s, card)) continue;
     if (CARDS[card].targeted) {
       for (let i = 0; i < world.n; i++) if (s.phase[i] !== 3) actions.push({ card, target: i });
@@ -48,7 +48,7 @@ export function chooseAction(
   history: HistoryPoint[] = [],
 ): Action {
   if (policy === 'noop') return { card: 'noop' };
-  const cards = drawHand(world, s.turn).filter((card) => !actionUnavailable(world, s, card));
+  const cards = drawHand(world, s.turn, p).filter((card) => !actionUnavailable(world, s, card));
   if (policy === 'random') {
     const card = cards[rng.int(cards.length)];
     const targets = Array.from(s.phase, (v, i) => (v < 3 ? i : -1)).filter((i) => i >= 0);
@@ -95,7 +95,7 @@ export function chooseAction(
   const base = expectedCrisis(world, s, p);
   let best: Action = { card: 'noop' },
     bestGain = 0;
-  for (const action of availableActions(world, s)) {
+  for (const action of availableActions(world, s, p)) {
     if (action.card === 'foundation' || action.card === 'noop') continue;
     const updated = applyAction(world, s, action, 0, p).state;
     let risk = expectedCrisis(world, updated, p);

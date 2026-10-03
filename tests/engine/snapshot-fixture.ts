@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CARDS } from '../../src/engine/cards';
+import { LEGACY_CARDS } from '../../src/engine/cards';
 import { step } from '../../src/engine/dynamics';
 import { DEFAULT_PARAMS, MODEL_VERSION, TOTAL_TURNS } from '../../src/engine/params';
 import { stream } from '../../src/engine/rng';
@@ -48,7 +48,7 @@ export function goldenSnapshot() {
       totalTurns: TOTAL_TURNS,
       protocol: 'story-v3/fixed-5+9N',
       params,
-      cards: CARDS,
+      cards: LEGACY_CARDS,
     }),
     stateAndHistorySha256: hash({ world, state, history, actions }),
     result: score(state.foundation, history),

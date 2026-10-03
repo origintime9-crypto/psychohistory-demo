@@ -1,4 +1,7 @@
-export type CardId = 'academy' | 'religion' | 'elites' | 'tax' | 'reform' | 'foundation' | 'noop';
+export type LegacyCardId =
+  'academy' | 'religion' | 'elites' | 'tax' | 'reform' | 'foundation' | 'noop';
+export type CardId =
+  LegacyCardId | 'relief' | 'convoy' | 'trade' | 'diplomacy' | 'intelligence' | 'evacuation';
 export type StoryChoiceId = 'aid' | 'bargain' | 'defer';
 export type Action = { card: CardId; target?: number; eventChoice?: StoryChoiceId };
 export type Phase = 0 | 1 | 2 | 3;
@@ -13,6 +16,7 @@ export interface ChronicleState {
   >;
 }
 export interface World {
+  layout?: 'atlas';
   seed: string;
   n: number;
   x: Float64Array;
@@ -26,6 +30,7 @@ export interface World {
   terminus: number;
 }
 export interface State {
+  strategic?: StrategicState;
   turn: number;
   pressure: Float64Array;
   prosperity: Float64Array;
@@ -49,6 +54,14 @@ export interface State {
   muleOccurred: boolean;
   lastStory: string | null;
   chronicle?: ChronicleState;
+}
+export const STRATEGIC_KEYS = ['supply', 'trade', 'intelligence', 'autonomy', 'fatigue'] as const;
+export interface StrategicState {
+  supply: Float64Array;
+  trade: Float64Array;
+  intelligence: Float64Array;
+  autonomy: Float64Array;
+  fatigue: Float64Array;
 }
 export interface Event {
   sector: number;
@@ -170,6 +183,10 @@ export const ARRAY_KEYS = [
 ] as const;
 export function cloneState(s: State): State {
   const copy = { ...s };
+  if (s.strategic) {
+    copy.strategic = { ...s.strategic };
+    for (const k of STRATEGIC_KEYS) copy.strategic[k] = s.strategic[k].slice();
+  }
   if (s.chronicle) copy.chronicle = { ...s.chronicle, resolved: { ...s.chronicle.resolved } };
   for (const k of ARRAY_KEYS) (copy[k] as Float64Array | Uint8Array) = s[k].slice();
   return copy;

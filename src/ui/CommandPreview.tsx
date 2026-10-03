@@ -29,6 +29,12 @@ export const CARD_GUIDANCE = {
     why: '保留资源，积蓄影响力，为下一次更重要的介入做准备。',
     when: '适合需要恢复影响力、等待时机时',
   },
+  relief: { why: '让粮食先抵达需要它的人，再讨论下一份报告。', when: '补给与人口压力' },
+  convoy: { why: '商船仍然要穿过边疆。派出护航，让航线保持畅通。', when: '运输与驻军' },
+  trade: { why: '让遥远世界的市场重新连接，也让彼此的利益重新靠近。', when: '贸易与繁荣' },
+  diplomacy: { why: '给地方代表一把椅子，也给帝国留下一次继续交谈的机会。', when: '自治与和解' },
+  intelligence: { why: '把耳目派往银河边缘，听见那些尚未成为急电的声音。', when: '情报与信任' },
+  evacuation: { why: '把书、设备和索引送走。至少让未来还能读到今天。', when: '知识与撤离' },
 };
 export default function CommandPreview({
   world,

@@ -1,4 +1,4 @@
-import { CARDS } from '../engine/cards';
+import { CARDS, LEGACY_CARDS } from '../engine/cards';
 import { DEFAULT_PARAMS, MODEL_VERSION, TOTAL_TURNS, type Params } from '../engine/params';
 import { hashSeed } from '../engine/rng';
 import type { Action, Observation, Reveal, StoryChoiceId } from '../engine/types';
@@ -20,14 +20,15 @@ export interface SavedGame {
   tutorialStep: number | null;
   tutorialDone: boolean;
   pendingEventChoice?: StoryChoiceId;
+  pendingChapter?: boolean;
 }
 export function modelFingerprint(params: Params): string {
   return hashSeed(
     JSON.stringify({
       model: MODEL_VERSION,
-      protocol: `weighted-deck-v2/fixed-5+9N/mule-stream-v3/${params.campaign ? 'story-v4-campaign' : 'story-v3'}/score-floor-0.1/turns-${TOTAL_TURNS}`,
+      protocol: `${params.strategic ? 'strategic-deck-v1/transport-v1/adaptive-events-v1' : 'weighted-deck-v2'}/fixed-5+9N/mule-stream-v3/${params.campaign ? 'story-v4-campaign' : 'story-v3'}/score-floor-0.1/turns-${TOTAL_TURNS}`,
       params,
-      cards: CARDS,
+      cards: params.strategic ? CARDS : LEGACY_CARDS,
     }),
   )
     .toString(16)
@@ -49,6 +50,7 @@ export function serializeGame(game: Game): string | null {
     tutorialStep: game.tutorialStep,
     tutorialDone: game.tutorialDone,
     pendingEventChoice: game.action.eventChoice,
+    pendingChapter: !!s.params.strategic && game.status === 'revealing',
   };
   return JSON.stringify(data);
 }
@@ -90,8 +92,11 @@ export function restoreGame(raw: string): Game {
     throw new Error('存档预测记录无效');
   if (
     Object.keys(s.params).length !==
-      Object.keys(DEFAULT_PARAMS).length + (Object.hasOwn(s.params, 'campaign') ? 1 : 0) ||
-    (Object.hasOwn(s.params, 'campaign') && typeof s.params.campaign !== 'boolean') ||
+      Object.keys(DEFAULT_PARAMS).length +
+        ['campaign', 'strategic', 'atlas'].filter((key) => Object.hasOwn(s.params, key)).length ||
+    ['campaign', 'strategic', 'atlas'].some(
+      (key) => Object.hasOwn(s.params, key) && typeof s.params[key as keyof Params] !== 'boolean',
+    ) ||
     Object.entries(DEFAULT_PARAMS).some(([key, defaultValue]) => {
       const value = s.params[key as keyof Params];
       return (
@@ -103,6 +108,7 @@ export function restoreGame(raw: string): Game {
     throw new Error('存档参数无效');
   if (
     typeof s.tutorialDone !== 'boolean' ||
+    (s.pendingChapter !== undefined && typeof s.pendingChapter !== 'boolean') ||
     (s.tutorialStep !== null && ![0, 1, 2].includes(s.tutorialStep))
   )
     throw new Error('存档引导记录无效');
@@ -130,7 +136,13 @@ export function restoreGame(raw: string): Game {
   return {
     ...emptyGame(s.tutorialDone),
     session,
-    status: session.state.turn === TOTAL_TURNS ? 'ended' : 'playing',
+    status:
+      s.pendingChapter && session.params.strategic && session.state.turn > 0
+        ? 'revealing'
+        : session.state.turn === TOTAL_TURNS
+          ? 'ended'
+          : 'playing',
+    reveal: s.pendingChapter && session.params.strategic ? (session.reveals.at(-1) ?? null) : null,
     tutorialStep: s.tutorialStep,
     view: s.tutorialStep !== null ? 'briefing' : 'empire',
     action: { card: 'noop', eventChoice: s.pendingEventChoice },

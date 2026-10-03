@@ -49,6 +49,12 @@ export function targetEffects(
           sensitivity * channel * (next.religion[i] - state.religion[i]) +
           0.25 * (state.elites[i] - next.elites[i]) +
           0.12 * (state.pressure[i] - next.pressure[i]);
+        if (params.strategic && state.strategic && next.strategic)
+          delayed +=
+            0.18 * (next.strategic.trade[i] - state.strategic.trade[i]) +
+            0.14 * (next.strategic.supply[i] - state.strategic.supply[i]) +
+            0.16 * (next.strategic.intelligence[i] - state.strategic.intelligence[i]) +
+            0.12 * (next.strategic.autonomy[i] - state.strategic.autonomy[i]);
       }
       return {
         target,

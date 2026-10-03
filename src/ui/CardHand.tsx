@@ -1,12 +1,15 @@
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, BookOpen, Check, X, Crosshair, ChevronDown, Image } from 'lucide-react';
 import { actionUnavailable, CARDS, drawHand } from '../engine/cards';
+import type { Params } from '../engine/params';
 import type { Action, CardEstimate, CardId, Comparison, State, World } from '../engine/types';
-import CommandPreview, { CARD_GUIDANCE } from './CommandPreview';
-const signed = (value: number, digits = 2) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
-const years = (value: number) =>
-  `${value >= 0 ? '+' : '−'}${Math.abs(Math.round(value)).toLocaleString('zh-CN')} 年`;
+import { CARD_GUIDANCE } from './CommandPreview';
+import { CARD_CATEGORY, cardArt } from './cardArt';
+
 interface Props {
   world: World;
   state: State;
+  params: Params;
   action: Action;
   onSelect: (action: Action) => void;
   comparison: Comparison | null;
@@ -20,206 +23,268 @@ interface Props {
   onAdvance: () => void;
   selectedSector: number | undefined;
   eventAwaiting: boolean;
+  hasEvent?: boolean;
+  locked?: boolean;
 }
+
 export default function CardHand({
   world,
   state,
+  params,
   action,
   onSelect,
-  comparison,
   estimates,
-  handBusy,
-  handError,
-  busy,
   ready,
-  elapsed,
+  busy,
   error,
   onAdvance,
   selectedSector,
-  eventAwaiting,
+  hasEvent,
+  locked,
 }: Props) {
-  const targeted = CARDS[action.card].targeted,
-    needTarget = targeted && action.target === undefined;
+  const [library, setLibrary] = useState(false);
+  const [category, setCategory] = useState('全部');
+  const [expanded, setExpanded] = useState(false);
+  const [illustration, setIllustration] = useState<CardId | null>(null);
+  const catalogue = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  const hand = drawHand(world, state.turn, params);
+  useEffect(() => {
+    setExpanded(false);
+    setLibrary(false);
+    setIllustration(null);
+  }, [state.turn]);
+  useEffect(() => {
+    if (!library) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    catalogue.current?.focus();
+    return () => {
+      document.body.style.overflow = overflow;
+      opener.current?.focus();
+    };
+  }, [library]);
+  const select = (id: CardId) => {
+    const target =
+      selectedSector !== undefined && state.phase[selectedSector] !== 3
+        ? selectedSector
+        : (estimates[id]?.target ?? state.phase.findIndex((phase) => phase !== 3));
+    onSelect({ card: id, ...(CARDS[id].targeted && target >= 0 ? { target } : {}) });
+  };
   return (
-    <section className="intervention">
-      <div className="hand-title">
-        <div>
-          <span className="eyebrow">你的干预</span>
-          <h2>下达本回合的命令</h2>
-        </div>
-        <span className="subtle">每回合选择 1 张 · 下回合影响力 +1</span>
-      </div>
-      <p className="hand-assumption">
-        {eventAwaiting
-          ? '先回应上方事件，再安排一条命令。'
-          : '事件与命令共用资源。选择后看直接效果，再决定是否推进十年。'}
-        {handBusy ? ' 整手牌推演中…' : ''}
-        {handError ? ` 摘要暂不可用：${handError}` : ''}
-      </p>
-      <div className="card-grid">
-        {drawHand(world, state.turn).map((id) => {
-          const card = CARDS[id],
-            unavailable = actionUnavailable(world, state, id),
-            estimate = estimates[id];
-          const suggested =
-            selectedSector !== undefined && state.phase[selectedSector] !== 3
-              ? selectedSector
-              : estimate?.target;
-          return (
-            <button
-              key={id}
-              type="button"
-              className={`card ${action.card === id ? 'selected' : ''} ${id === 'noop' ? 'noop-card' : ''}`}
-              disabled={!!unavailable || eventAwaiting}
-              aria-pressed={action.card === id}
-              onClick={() =>
-                onSelect({
-                  card: id,
-                  ...(card.targeted && suggested !== undefined ? { target: suggested } : {}),
-                })
-              }
-            >
-              <div className="card-top">
-                <span className="card-symbol">{card.symbol}</span>
-                <span className="card-cost">
-                  {card.cost === 0 ? '+2' : card.cost}
-                  <small>{card.cost === 0 ? ' 额外影响力' : ' 影响力'}</small>
-                </span>
-              </div>
-              <h3>{card.name}</h3>
-              <div className="card-scope">
-                {card.targeted ? '指定一个星区' : id === 'noop' ? '观察与等待' : '影响全帝国'}
-              </div>
-              <p className="card-story">{CARD_GUIDANCE[id].why}</p>
-              <small className="card-situation">{CARD_GUIDANCE[id].when}</small>
-              <p className="card-mechanics">{card.effect}</p>
-              <div className="card-estimate" aria-live="polite">
-                {estimate ? (
-                  <>
-                    <b
-                      className={
-                        estimate.comparison.scoreDelta > 0
-                          ? 'mint'
-                          : estimate.comparison.scoreDelta < 0
-                            ? 'rose'
-                            : ''
-                      }
-                    >
-                      终局 ΔQ {signed(estimate.comparison.scoreDelta, 3)}
-                    </b>
-                    <span
-                      className={
-                        estimate.comparison.darknessDelta < 0
-                          ? 'mint'
-                          : estimate.comparison.darknessDelta > 0
-                            ? 'rose'
-                            : ''
-                      }
-                    >
-                      黑暗时代 {years(estimate.comparison.darknessDelta)}
-                    </span>
-                    <small>
-                      {estimate.target !== undefined
-                        ? `建议 ${world.names[estimate.target]} · 可在星图改选`
-                        : `${estimate.samples} 条配对路径的估计`}
-                    </small>
-                  </>
-                ) : (
-                  <span>{unavailable ?? '终局效果估算中…'}</span>
-                )}
-              </div>
-              <div className="card-downside">{card.downside}</div>
-              {unavailable && <span className="card-disabled">{unavailable}</span>}
-            </button>
-          );
-        })}
-      </div>
-      <CommandPreview world={world} state={state} action={action} />
-      <div className="action-bar">
-        <div className="action-preview" aria-live="polite">
-          <div className="preview-title">
-            {CARDS[action.card].name}
-            {action.target !== undefined && targeted ? (
-              <span> → {world.names[action.target]}</span>
-            ) : null}
-          </div>
-          {eventAwaiting ? (
-            <p className="gold">先回应本回合急电。你的回应会影响剩余资源和这次命令的效果。</p>
-          ) : error ? (
-            <p className="error-text">预测失败：{error}，请重新选择行动。</p>
-          ) : needTarget ? (
-            <p className="gold">点击星图中尚未独立的星区，预览干预效果。</p>
-          ) : busy ? (
-            <p>正在配对推演干预与基线…</p>
-          ) : comparison ? (
-            <>
-              <p>
-                终局 ΔQ{' '}
-                <b
-                  className={
-                    comparison.scoreDelta > 0 ? 'mint' : comparison.scoreDelta < 0 ? 'rose' : ''
-                  }
-                >
-                  {signed(comparison.scoreDelta, 3)}
-                </b>
-              </p>
-              <p className="terminal-metrics">
-                <span>
-                  黑暗时代{' '}
-                  <strong
-                    className={
-                      comparison.darknessDelta < 0
-                        ? 'mint'
-                        : comparison.darknessDelta > 0
-                          ? 'rose'
-                          : ''
-                    }
-                  >
-                    {years(comparison.darknessDelta)}
-                  </strong>
-                </span>
-                <span>
-                  末三回合稳定{' '}
-                  <strong>{signed(comparison.stabilityDelta * 100, 1)} 个百分点</strong>
-                </span>
-                <span>
-                  终局国库{' '}
-                  <strong className={comparison.treasuryDelta < 0 ? 'rose' : ''}>
-                    {signed(comparison.treasuryDelta * 100, 1)} 个百分点
-                  </strong>
-                </span>
-              </p>
-              <details className="preview-detail">
-                <summary>推演假设与统计详情</summary>
-                <p>
-                  本回合执行当前事件回应与命令，之后按兵不动、暂缓未来事件。“骡”未计入。卡面使用 32
-                  条配对路径粗估，选中后用 96 条精算；定向卡只筛选部分候选。
-                </p>
-                <p>ΔQ 标准误 {comparison.scoreStandardError.toFixed(3)}。</p>
-                <p className="secondary-metrics">
-                  下回合危机 {signed(comparison.meanDelta)} ± {comparison.standardError.toFixed(2)}
-                  ；五步危机 {signed(comparison.finalDelta)}；基地{' '}
-                  {signed(comparison.foundationDelta * 100, 1)} 个百分点。
-                </p>
-              </details>
-            </>
-          ) : (
-            <p>观察当前趋势，积蓄影响力。</p>
-          )}
-          {elapsed !== null && !busy && (
-            <small className="preview-time">
-              配对预览 {Math.round(elapsed)} ms · 此后按兵不动，不计未知冲击
-            </small>
-          )}
-        </div>
+    <section className="intervention narrative-hand" aria-label="本回合命令">
+      <div className="preparation-bar">
         <button
-          className="primary advance-button"
-          disabled={!ready || busy || needTarget || !!error}
-          onClick={onAdvance}
+          className="prepared-command"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          disabled={locked}
         >
-          执行并推进十年 <span>→</span>
+          <span>
+            <small>本回合命令</small>
+            <b>{CARDS[action.card].name}</b>
+          </span>
+          <span className="command-target">
+            {action.target !== undefined && CARDS[action.card].targeted
+              ? world.names[action.target]
+              : action.card === 'noop'
+                ? '等待'
+                : '帝国全域'}
+          </span>
+          <ChevronDown
+            size={16}
+            className={expanded ? 'command-chevron expanded' : 'command-chevron'}
+          />
         </button>
+        <div className="preparation-actions">
+          <span>{state.influence} 影响力</span>
+          <button
+            ref={opener}
+            title="卡牌图鉴"
+            aria-label="打开卡牌图鉴"
+            onClick={() => setLibrary(true)}
+          >
+            <BookOpen size={19} />
+          </button>
+        </div>
       </div>
+      {expanded && (
+        <div className="prepared-options">
+          <div className="card-grid text-commands">
+            {hand.map((id) => {
+              const unavailable = actionUnavailable(world, state, id);
+              return (
+                <button
+                  key={id}
+                  className={`card ${action.card === id ? 'selected' : ''}`}
+                  aria-pressed={action.card === id}
+                  disabled={!!unavailable || locked}
+                  onClick={() => select(id)}
+                >
+                  <div className="command-category">
+                    <span>{CARD_CATEGORY[id]}</span>
+                    {action.card === id && <Check className="card-check" size={20} />}
+                  </div>
+                  <div className="card-copy">
+                    <div className="card-label">
+                      <h3>{CARDS[id].name}</h3>
+                      <span title="所需影响力">{CARDS[id].cost}</span>
+                    </div>
+                    <p>{CARDS[id].short}</p>
+                    {unavailable && <small className="rose">{unavailable}</small>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {CARDS[action.card].targeted && (
+            <label className="target-picker">
+              <Crosshair size={17} />
+              <span>目的星区</span>
+              <select
+                aria-label="当前干预目标"
+                value={action.target ?? ''}
+                disabled={locked}
+                onChange={(e) => onSelect({ card: action.card, target: Number(e.target.value) })}
+              >
+                {Array.from(state.phase, (phase, i) =>
+                  phase !== 3 ? (
+                    <option key={i} value={i}>
+                      {world.names[i]}
+                    </option>
+                  ) : null,
+                )}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+      {!hasEvent && (
+        <div className="quiet-decade">
+          <p>{params.strategic ? '这一年，没有新的急电。' : '下一段历史，等待你的决定。'}</p>
+          <button
+            className="primary"
+            onClick={onAdvance}
+            disabled={!ready || busy || locked || !!error}
+          >
+            渡过十年
+            <ArrowRight size={17} />
+          </button>
+        </div>
+      )}
+      {library && (
+        <div
+          className="catalogue-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLibrary(false);
+          }}
+        >
+          <div
+            className="card-catalogue"
+            ref={catalogue}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="catalogue-title"
+            tabIndex={-1}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setLibrary(false);
+              if (e.key === 'Tab') {
+                const buttons =
+                  catalogue.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+                if (!buttons?.length) return;
+                if (
+                  e.shiftKey &&
+                  (document.activeElement === buttons[0] ||
+                    document.activeElement === catalogue.current)
+                ) {
+                  e.preventDefault();
+                  buttons[buttons.length - 1].focus();
+                } else if (
+                  !e.shiftKey &&
+                  (document.activeElement === buttons[buttons.length - 1] ||
+                    document.activeElement === catalogue.current)
+                ) {
+                  e.preventDefault();
+                  buttons[0].focus();
+                }
+              }
+            }}
+          >
+            <header>
+              <div>
+                <span className="eyebrow">帝国干预档案</span>
+                <h2 id="catalogue-title">
+                  卡牌图鉴 <small>{Object.keys(CARDS).length}</small>
+                </h2>
+              </div>
+              <button aria-label="关闭卡牌图鉴" onClick={() => setLibrary(false)}>
+                <X size={20} />
+              </button>
+            </header>
+            <nav aria-label="卡牌类别">
+              {['全部', '知识', '政治', '物流', '贸易', '情报', '信念', '等待'].map((c) => (
+                <button
+                  key={c}
+                  aria-pressed={category === c}
+                  className={category === c ? 'active' : ''}
+                  onClick={() => setCategory(c)}
+                >
+                  {c}
+                </button>
+              ))}
+            </nav>
+            <div className="catalogue-grid">
+              {(Object.keys(CARDS) as CardId[])
+                .filter((id) => category === '全部' || CARD_CATEGORY[id] === category)
+                .map((id) => (
+                  <article className="catalogue-card" key={id}>
+                    <div>
+                      <div className="catalogue-meta">
+                        <span className="eyebrow">
+                          {CARD_CATEGORY[id]} · {CARDS[id].cost} 影响力
+                        </span>
+                        <button
+                          className="illustration-toggle"
+                          title={illustration === id ? '收起插画' : `查看${CARDS[id].name}插画`}
+                          aria-label={
+                            illustration === id ? '收起插画' : `查看${CARDS[id].name}插画`
+                          }
+                          aria-pressed={illustration === id}
+                          onClick={() => setIllustration(illustration === id ? null : id)}
+                        >
+                          <Image size={16} />
+                        </button>
+                      </div>
+                      <h3>{CARDS[id].name}</h3>
+                      <p>{CARD_GUIDANCE[id].why}</p>
+                      {illustration === id && (
+                        <img
+                          className="optional-card-art"
+                          src={cardArt(id)}
+                          alt={`${CARDS[id].name}插画`}
+                        />
+                      )}
+                      <button
+                        disabled={
+                          !hand.includes(id) || !!actionUnavailable(world, state, id) || locked
+                        }
+                        onClick={() => {
+                          select(id);
+                          setLibrary(false);
+                          setExpanded(true);
+                        }}
+                      >
+                        {hand.includes(id)
+                          ? (actionUnavailable(world, state, id) ?? '安排此命令')
+                          : '不在本回合手牌中'}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { CARDS, CARD_IDS } from '../engine/cards';
+import { CARDS, LEGACY_CARD_IDS as CARD_IDS } from '../engine/cards';
 import { shortlistTargets } from '../engine/decisions';
 import { prepareBaseline, previewAction } from '../engine/forecast';
 import { DEFAULT_PARAMS, MODEL_VERSION } from '../engine/params';

@@ -37,6 +37,8 @@ export interface Params {
   storyChance: number;
   /** New campaigns use linked book-inspired chapters; absent keeps legacy saves reproducible. */
   campaign?: boolean;
+  strategic?: boolean;
+  atlas?: boolean;
 }
 /** All numerical magnitudes are game parameters, NOT coefficients fitted to real political data. */
 export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({

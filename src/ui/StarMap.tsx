@@ -3,9 +3,14 @@ import { describeEvent, PHASE_NAMES } from '../engine/flavor';
 import { riskBreakdown, transitionProbabilities } from '../engine/hazard';
 import { TOTAL_TURNS, type Params } from '../engine/params';
 import { storyEvent } from '../engine/story';
+import { routeTo, impactTargets } from '../engine/strategy';
+import { CARDS, cardEffect } from '../engine/cards';
+import { Map as MapIcon, Orbit, Plus, Minus, Focus, Network } from 'lucide-react';
+import AdministrativeMap, { type AtlasLayer } from './AdministrativeMap';
 import {
   counts,
   type Action,
+  type Comparison,
   type Event,
   type Reveal,
   type State,
@@ -41,6 +46,8 @@ interface Props {
   actions: Action[];
   reveals: Reveal[];
   focusRequest?: number;
+  plannedAction?: Action;
+  comparison?: Comparison | null;
 }
 export default function StarMap(props: Props) {
   const {
@@ -59,10 +66,14 @@ export default function StarMap(props: Props) {
   const [archiveTurn, setArchiveTurn] = useState<number | null>(null);
   const [inspected, setInspected] = useState<number | undefined>(selected);
   const [network, setNetwork] = useState(true);
+  const [mapMode, setMapMode] = useState<'atlas' | 'hologram'>(
+    world.layout === 'atlas' ? 'atlas' : 'hologram',
+  );
+  const [layer, setLayer] = useState<AtlasLayer>('risk');
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [feedOpen, setFeedOpen] = useState(() => window.innerWidth > 1000);
+  const [feedOpen, setFeedOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [viewError, setViewError] = useState('');
   const frames = useMemo(() => galaxyArchive(world, params, actions), [world, params, actions]);
@@ -84,6 +95,7 @@ export default function StarMap(props: Props) {
   const breakdown = riskBreakdown(world, state, focus, params);
   const c = counts(state);
   const chances = transitionProbabilities(world, state, focus, 0, params);
+  const route = routeTo(world, state, focus);
   const probability =
     !archived && props.probabilities ? props.probabilities[focus] : chances[1] + chances[2];
   const changed = new Map(events.map((e) => [e.sector, e]));
@@ -91,7 +103,7 @@ export default function StarMap(props: Props) {
     const chance = transitionProbabilities(world, state, i, 0, params);
     const p = !archived && props.probabilities ? props.probabilities[i] : chance[1] + chance[2];
     const delta = !archived && targeting ? effects.get(i) : undefined;
-    const color =
+    const riskShade =
       delta === undefined
         ? riskColor(p, state.phase[i])
         : delta < -0.03
@@ -99,6 +111,14 @@ export default function StarMap(props: Props) {
           : delta > 0.01
             ? '#f0798b'
             : '#a3b4c8';
+    const color =
+      state.phase[i] === 3
+        ? '#8393ac'
+        : layer !== 'risk' && state.strategic
+          ? ['#ef9a91', '#dbbf79', '#92cfb6'][
+              Math.min(2, Math.floor(state.strategic[layer][i] * 3))
+            ]
+          : riskShade;
     const event = changed.get(i);
     return {
       color,
@@ -172,7 +192,7 @@ export default function StarMap(props: Props) {
   return (
     <section
       ref={panel}
-      className={`panel map-panel galaxy-panel ${inspected !== undefined ? 'has-drawer' : ''}`}
+      className={`panel map-panel galaxy-panel ${mapMode === 'atlas' ? 'atlas-mode' : ''} ${inspected !== undefined ? 'has-drawer' : ''}`}
       aria-label="银河探索控制台"
     >
       <div className="panel-heading galaxy-heading">
@@ -187,7 +207,32 @@ export default function StarMap(props: Props) {
           </h2>
         </div>
         <div className="galaxy-view-actions">
-          <button type="button" aria-expanded={feedOpen} onClick={() => setFeedOpen(!feedOpen)}>
+          <div className="map-mode" role="group" aria-label="星图视图">
+            <button
+              aria-pressed={mapMode === 'atlas'}
+              className={mapMode === 'atlas' ? 'active' : ''}
+              onClick={() => setMapMode('atlas')}
+            >
+              <MapIcon size={15} />
+              行政图
+            </button>
+            <button
+              aria-pressed={mapMode === 'hologram'}
+              className={mapMode === 'hologram' ? 'active' : ''}
+              onClick={() => setMapMode('hologram')}
+            >
+              <Orbit size={15} />
+              全息图
+            </button>
+          </div>
+          <button
+            type="button"
+            aria-expanded={feedOpen}
+            onClick={() => {
+              setFeedOpen(!feedOpen);
+              if (!feedOpen) setInspected(undefined);
+            }}
+          >
             {feedOpen ? '收起事件流' : '事件流'}
           </button>
           {document.fullscreenEnabled && (
@@ -210,15 +255,62 @@ export default function StarMap(props: Props) {
           {viewError}
         </p>
       )}
+      {params.strategic && (
+        <div className="map-ledger">
+          <span>
+            国库 <b>{pct(state.treasury)}</b>
+          </span>
+          <span>
+            治理 <b>{pct(state.governance)}</b>
+          </span>
+          <span>
+            税率 <b>{pct(state.tax)}</b>
+          </span>
+          <span>
+            基地 <b>{pct(state.foundation)}</b>
+          </span>
+          <span>
+            稳定{' '}
+            <b>
+              {c.stable} / {world.n}
+            </b>
+          </span>
+          <label>
+            图层
+            <select
+              value={layer}
+              aria-label="星图数据图层"
+              onChange={(e) => setLayer(e.target.value as AtlasLayer)}
+            >
+              <option value="risk">危机风险</option>
+              <option value="supply">补给情况</option>
+              <option value="trade">贸易网络</option>
+            </select>
+          </label>
+        </div>
+      )}
       <div className="galaxy-stage">
-        <GalaxyScene
-          ref={scene}
-          world={world}
-          sectors={sectors}
-          selected={inspected}
-          network={network}
-          onSelect={inspect}
-        />
+        {mapMode === 'atlas' ? (
+          <AdministrativeMap
+            ref={scene}
+            world={world}
+            state={state}
+            sectors={sectors}
+            selected={inspected}
+            network={network}
+            layer={layer}
+            onSelect={inspect}
+          />
+        ) : (
+          <GalaxyScene
+            ref={scene}
+            world={world}
+            sectors={sectors}
+            selected={inspected}
+            network={network}
+            onSelect={inspect}
+          />
+        )}
         <div className="galaxy-tools">
           <button
             type="button"
@@ -226,7 +318,7 @@ export default function StarMap(props: Props) {
             aria-label="放大星图"
             title="放大星图"
           >
-            ＋
+            <Plus size={18} />
           </button>
           <button
             type="button"
@@ -234,10 +326,10 @@ export default function StarMap(props: Props) {
             aria-label="缩小星图"
             title="缩小星图"
           >
-            −
+            <Minus size={18} />
           </button>
           <button type="button" onClick={reset} aria-label="返回银河全景" title="返回银河全景">
-            ⌖
+            <Focus size={18} />
           </button>
           <button
             type="button"
@@ -246,7 +338,7 @@ export default function StarMap(props: Props) {
             aria-label="切换星区联系线"
             title="星区联系线"
           >
-            ⌁
+            <Network size={18} />
           </button>
         </div>
         <div className="galaxy-search">
@@ -317,14 +409,6 @@ export default function StarMap(props: Props) {
           <br />
           {network ? 'NEIGHBOR NETWORK / 邻区作用通道' : 'DEEP SPACE / 深空模式'}
         </div>
-        {inspected === undefined && (
-          <div className="galaxy-hint">
-            <span>✧</span>
-            <div>
-              点击一颗星，打开它的历史<small>拖动旋转 · 滚轮缩放 · 右键平移 · 双指操作</small>
-            </div>
-          </div>
-        )}
         {archived && (
           <div className="archive-badge">
             历史回看 · 第 {turn} 回合{' '}
@@ -426,6 +510,80 @@ export default function StarMap(props: Props) {
                 </div>
               ))}
             </dl>
+            {state.strategic && (
+              <>
+                <dl className="planet-metrics strategic-metrics">
+                  {(
+                    [
+                      ['补给', state.strategic.supply[focus]],
+                      ['贸易', state.strategic.trade[focus]],
+                      ['情报', state.strategic.intelligence[focus]],
+                      ['自治', state.strategic.autonomy[focus]],
+                      ['干预疲劳', state.strategic.fatigue[focus]],
+                    ] as [string, number][]
+                  ).map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{pct(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="route-report">
+                  <span>川陀航线</span>
+                  <p>
+                    {route.length
+                      ? route.map((i) => world.names[i]).join(' → ')
+                      : '已中断，无法通过独立星区'}
+                  </p>
+                </div>
+              </>
+            )}
+            {!archived && props.plannedAction && (
+              <details className="planet-model">
+                <summary>当前命令 · {CARDS[props.plannedAction.card].name}</summary>
+                <p>{cardEffect(props.plannedAction.card, params.strategic)}</p>
+                <p>{CARDS[props.plannedAction.card].downside}</p>
+                {props.plannedAction.target !== undefined && (
+                  <p>
+                    传导范围：
+                    {impactTargets(world, state, props.plannedAction.target)
+                      .filter(([, weight]) => weight > 0)
+                      .map(([i]) => world.names[i])
+                      .join('、')}
+                  </p>
+                )}
+                {props.comparison && (
+                  <p>
+                    终局 ΔQ {props.comparison.scoreDelta.toFixed(3)} · 国库变化{' '}
+                    {(props.comparison.treasuryDelta * 100).toFixed(1)}{' '}
+                    个百分点；此后等待，未知冲击不计入。
+                  </p>
+                )}
+              </details>
+            )}
+            {currentDispatch?.target === focus && (
+              <details className="planet-model">
+                <summary>当前事件 · 局势修正</summary>
+                {currentDispatch.choices
+                  .filter((option) => option.chance !== undefined)
+                  .map((option) => (
+                    <div key={option.id}>
+                      <p>
+                        {option.label} · 成功概率 {pct(option.chance!)}
+                        {option.baseChance !== undefined
+                          ? `（基础 ${pct(option.baseChance)}）`
+                          : ''}
+                      </p>
+                      {option.chanceFactors?.map((factor) => (
+                        <p key={factor.label}>
+                          {factor.label}：{factor.value >= 0 ? '+' : ''}
+                          {factor.value.toFixed(2)} 对数胜算
+                        </p>
+                      ))}
+                    </div>
+                  ))}
+              </details>
+            )}
             <details className="planet-model">
               <summary>历史分叉 · 单步转移概率</summary>
               <div>
@@ -500,23 +658,23 @@ export default function StarMap(props: Props) {
       </div>
       <div className="galaxy-legend">
         <span>
-          <i style={{ background: '#7daed5' }} />
-          低危机
+          <i style={{ background: layer === 'risk' ? '#7daed5' : '#92cfb6' }} />
+          {layer === 'risk' ? '低危机' : layer === 'supply' ? '补给充足' : '贸易繁盛'}
         </span>
         <span>
           <i style={{ background: '#d4bd80' }} />
-          中危机
+          {layer === 'risk' ? '中危机' : layer === 'supply' ? '补给平稳' : '贸易往来'}
         </span>
         <span>
-          <i style={{ background: '#f0798b' }} />
-          高危机
+          <i style={{ background: layer === 'risk' ? '#f0798b' : '#ef9a91' }} />
+          {layer === 'risk' ? '高危机' : layer === 'supply' ? '补给短缺' : '贸易薄弱'}
         </span>
         <span>
           <i style={{ background: '#8393ac' }} />
           已独立
         </span>
         <span className="legend-caption">
-          {targeting && !archived
+          {targeting && !archived && layer === 'risk'
             ? '星球颜色表示此卡的危机变化：绿降低、红增加。'
             : '光环：蓝 恢复 / 红 危机 / 金 急电'}
         </span>
