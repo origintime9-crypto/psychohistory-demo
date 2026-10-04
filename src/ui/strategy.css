@@ -568,6 +568,10 @@
   white-space: nowrap;
   letter-spacing: 0;
 }
+.atlas-mode .galaxy-readout {
+  background: #0b1214;
+  padding: 6px 8px;
+}
 .administrative-map {
   position: absolute;
   inset: 0;
