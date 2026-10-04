@@ -6,6 +6,8 @@ import type { BookId } from './books';
 import { clamp, cloneState, counts, type State, type StoryChoiceId, type World } from './types';
 import { STRATEGIC_KEYS } from './types';
 import { impactTargets } from './strategy';
+import { evolvingEvent, rememberDecision, historyFactors } from './evolution';
+import type { Approach, DecisionRecord, StrategicState } from './types';
 
 type LocalField =
   | 'prosperity'
@@ -17,24 +19,27 @@ type LocalField =
   | 'education'
   | 'garrison'
   | 'openness';
-interface Effect {
+export interface StoryEffect {
   legacy?: Partial<Record<LegacyField, number>>;
   local?: Partial<Record<LocalField, number>>;
   foundation?: number;
   governance?: number;
   treasury?: number;
   influence?: number;
+  strategic?: Partial<Record<keyof StrategicState, number>>;
 }
 export interface StoryChoice {
   id: StoryChoiceId;
   label: string;
   description: string;
   cost: { influence?: number; treasury?: number };
-  effect: Effect;
+  effect: StoryEffect;
+  voice?: string;
+  approach?: Approach;
   chance?: number;
   baseChance?: number;
   chanceFactors?: { label: string; value: number }[];
-  failure?: Effect;
+  failure?: StoryEffect;
   result: string;
   failureResult?: string;
   future?: string;
@@ -48,6 +53,8 @@ export interface StoryEvent {
   body: string;
   why: string;
   choices: StoryChoice[];
+  echo?: DecisionRecord;
+  revisits?: number;
   source?: { book: BookId; chapter: string; characters: string[]; note: string };
 }
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -56,7 +63,7 @@ const choice = (
   label: string,
   description: string,
   cost: StoryChoice['cost'],
-  effect: Effect,
+  effect: StoryEffect,
   result: string,
   extra: Partial<StoryChoice> = {},
 ): StoryChoice => ({ id, label, description, cost, effect, result, ...extra });
@@ -73,9 +80,17 @@ function baseStoryEvent(
     const chapter = campaignEvent(world, s);
     if (chapter) return chapter;
   }
-  if (s.turn === 1) return null;
-  const rng = stream(seed, `dispatch-v3:${s.turn}`);
-  if (s.turn !== 0 && rng.uniform() >= p.storyChance) return null;
+  if (s.turn === 1 && !p.evolving) return null;
+  const past = p.evolving
+    ? `:${
+        s.decisions?.history
+          .slice(-6)
+          .map((r) => `${r.event}:${r.choice}:${+r.success}`)
+          .join('/') ?? ''
+      }`
+    : '';
+  const rng = stream(seed, `dispatch-v3:${s.turn}${past}`);
+  if (s.turn !== 0 && rng.uniform() >= p.storyChance && !p.evolving) return null;
   const active = Array.from(s.phase, (phase, i) => (phase < 3 ? i : -1)).filter((i) => i >= 0);
   if (!active.length) return null;
   const c = counts(s);
@@ -420,7 +435,11 @@ export function storyEvent(
   p: Params = DEFAULT_PARAMS,
   seed = world.seed,
 ): StoryEvent | null {
-  const event = baseStoryEvent(world, s, p, seed);
+  const base = baseStoryEvent(world, s, p, seed);
+  const event =
+    p.evolving && p.storyEvents && s.turn < TOTAL_TURNS
+      ? evolvingEvent(world, s, base, seed)
+      : base;
   if (!event || !p.strategic || !s.strategic) return event;
   const i = event.target;
   const factors = [
@@ -431,17 +450,18 @@ export function storyEvent(
     { label: '贸易关系', value: 0.45 * s.strategic.trade[i] },
     { label: '当地危机', value: -0.18 * s.phase[i] },
   ];
-  const correction = factors.reduce((v, factor) => v + factor.value, 0);
   return {
     ...event,
     why: `本地合法性 ${pct(s.legitimacy[i])} · 派系化 ${pct(s.faction[i])} · 情报 ${pct(s.strategic.intelligence[i])} · 贸易 ${pct(s.strategic.trade[i])}。局部效果沿可达航线衰减传导，独立星区不参与中转。`,
     choices: event.choices.map((option) => {
       if (option.chance === undefined || option.chance <= 0 || option.chance >= 1) return option;
+      const allFactors = [...factors, ...(p.evolving ? historyFactors(s, event, option) : [])];
+      const correction = allFactors.reduce((v, factor) => v + factor.value, 0);
       const logOdds = Math.log(option.chance / (1 - option.chance));
       return {
         ...option,
         baseChance: option.chance,
-        chanceFactors: factors,
+        chanceFactors: allFactors,
         chance: clamp(1 / (1 + Math.exp(-(logOdds + correction))), 0.08, 0.96),
       };
     }),
@@ -478,15 +498,22 @@ export function applyStoryChoice(
   const unavailable = storyUnavailable(input, option);
   if (unavailable) throw new Error(unavailable);
   const s = cloneState(input);
+  if (option.approach) s.decisions ??= { history: [] };
   s.influence -= option.cost.influence ?? 0;
   s.treasury = clamp(s.treasury - (option.cost.treasury ?? 0));
   const success = uniform < (option.chance ?? 1);
   const effect = success ? option.effect : (option.failure ?? {});
-  if (event.source) {
+  if (event.source || (s.decisions && effect.legacy)) {
     s.chronicle ??= initialChronicle();
     for (const key of ['diplomacy', 'trade', 'secrecy'] as const)
       s.chronicle[key] = clamp(s.chronicle[key] + (effect.legacy?.[key] ?? 0));
-    s.chronicle.resolved[event.id] = { choice: id, label: option.label, success, turn: s.turn + 1 };
+    if (event.source)
+      s.chronicle.resolved[event.id] = {
+        choice: id,
+        label: option.label,
+        success,
+        turn: s.turn + 1,
+      };
   }
   s.foundation = clamp(s.foundation + (effect.foundation ?? 0));
   s.treasury = clamp(s.treasury + (effect.treasury ?? 0));
@@ -498,7 +525,11 @@ export function applyStoryChoice(
       const field = key as LocalField;
       s[field][i] = clamp(s[field][i] + value! * weight);
     }
+    if (s.strategic)
+      for (const key of STRATEGIC_KEYS)
+        s.strategic[key][i] = clamp(s.strategic[key][i] + (effect.strategic?.[key] ?? 0) * weight);
   }
+  if (s.decisions) rememberDecision(world, s, event, option, success);
   s.lastStory = event.id;
   return {
     state: s,
@@ -510,6 +541,7 @@ export function applyStoryChoice(
       label: option.label,
       success,
       text: success ? option.result : (option.failureResult ?? '协调没有成功。'),
+      echo: event.echo ? { ...event.echo } : undefined,
     },
   };
 }

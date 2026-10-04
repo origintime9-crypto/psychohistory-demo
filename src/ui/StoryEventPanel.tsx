@@ -8,6 +8,8 @@ const VOICES: Record<StoryChoiceId, string> = {
   aid: '“这件事不能再等了。按我的回复去办。”',
   bargain: '“把这份安排送给他们。这是我现在能够作出的决定。”',
   defer: '“先按现有安排处理，继续把消息送来。”',
+  improvise: '“换一个办法试试。由我承担这次决定。”',
+  recall: '“他们还记得以前的约定。把旧信一并送去。”',
 };
 
 export default function StoryEventPanel({
@@ -72,7 +74,7 @@ export default function StoryEventPanel({
                 <span className="choice-index">0{i + 1}</span>
                 <div>
                   <b>{option.label}</b>
-                  <p>{VOICES[option.id]}</p>
+                  <p>{option.voice ?? VOICES[option.id]}</p>
                   {unavailable && <small>{unavailable}</small>}
                 </div>
                 <span className="choice-check">

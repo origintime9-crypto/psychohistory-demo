@@ -1,8 +1,23 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useId,
+} from 'react';
 import { atlasPosition, ATLAS_SIZE } from '../engine/atlas';
 import { routeTo } from '../engine/strategy';
 import type { State, World } from '../engine/types';
 import type { GalaxyHandle, SceneSector } from './GalaxyScene';
+import {
+  ATLAS_DISTRICTS,
+  ATLAS_INK,
+  IMPERIAL_BORDER,
+  FOUNDATION_BORDER,
+  atlasLabels,
+} from './atlasDrawing';
 
 export type AtlasLayer = 'risk' | 'supply' | 'trade';
 interface Props {
@@ -21,6 +36,9 @@ const AdministrativeMap = forwardRef<GalaxyHandle, Props>(function Administrativ
   ref,
 ) {
   const svg = useRef<SVGSVGElement>(null);
+  const crop = useId();
+  const grid = useId();
+  const [viewport, setViewport] = useState({ width: 1100, height: 680 });
   const [camera, setCamera] = useState({ x: 0, y: 0, k: 1 });
   const cameraRef = useRef(camera);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -59,18 +77,33 @@ const AdministrativeMap = forwardRef<GalaxyHandle, Props>(function Administrativ
     return () => element.removeEventListener('wheel', wheel);
   }, []);
   useEffect(() => {
+    const element = svg.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setViewport({ width: entry.contentRect.width, height: entry.contentRect.height }),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
     if (selected === undefined || cameraRef.current.k <= 1.2) return;
     const [x, y] = atlasPosition(world, selected);
-    setCamera((c) => limit({ ...c, x: 600 - x * c.k, y: 430 - y * c.k }));
+    setCamera((c) => limit({ ...c, x: 672 - x * c.k, y: 455 - y * c.k }));
   }, [selected, world]);
   const path = selected === undefined ? [] : routeTo(world, state, selected);
-  const positions = Array.from({ length: world.n }, (_, i) => atlasPosition(world, i));
+  const positions = useMemo(
+    () => Array.from({ length: world.n }, (_, i) => atlasPosition(world, i)),
+    [world],
+  );
+  const labels = atlasLabels(world, positions, camera, viewport, selected);
+  const scale = Math.max(0.001, Math.min(viewport.width / 1344, viewport.height / 910));
+  const markerScale = Math.min(2.5, 1 / Math.max(0.1, scale * camera.k));
   return (
     <svg
       className={`administrative-map ${dragging ? 'dragging' : ''}`}
       ref={svg}
       viewBox="0 0 1344 910"
-      aria-label="行政星图"
+      aria-label="重绘银河行政星图"
       role="group"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -131,21 +164,120 @@ const AdministrativeMap = forwardRef<GalaxyHandle, Props>(function Administrativ
       }}
     >
       <defs>
-        <clipPath id="atlas-crop">
+        <clipPath id={crop}>
           <rect width="1344" height="910" />
         </clipPath>
-      </defs>
-      <g clipPath="url(#atlas-crop)">
-        <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.k})`}>
-          <image
-            href={`${import.meta.env.BASE_URL}maps/galactic-administration-reference.jpg`}
-            x="-52"
-            y="-130"
-            width="1440"
-            height="1080"
-            aria-hidden="true"
+        <pattern id={grid} width="64" height="64" patternUnits="userSpaceOnUse">
+          <path
+            d="M64 0 H0 V64"
+            fill="none"
+            stroke="#71908e"
+            strokeOpacity="0.12"
+            strokeWidth="0.7"
           />
-          <rect width="1344" height="910" fill="#030817" opacity="0.2" pointerEvents="none" />
+        </pattern>
+      </defs>
+      <g clipPath={`url(#${crop})`}>
+        <rect width="1344" height="910" fill="#0b1216" />
+        <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.k})`}>
+          <g pointerEvents="none" aria-hidden="true">
+            <rect width="1344" height="910" fill={`url(#${grid})`} />
+            {ATLAS_INK.stars.map((star, i) => (
+              <circle key={`background-${i}`} {...star} cx={star.x} cy={star.y} fill="#d0d7cb" />
+            ))}
+            {ATLAS_INK.arms.map((d, i) => (
+              <g
+                key={i}
+                fill="none"
+                stroke={i % 2 ? '#bd9ca8' : '#8cafbd'}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={d} strokeWidth="42" opacity="0.045" />
+                <path d={d} strokeWidth="16" opacity="0.06" />
+                <path d={d} strokeWidth="2" opacity="0.14" />
+              </g>
+            ))}
+            {ATLAS_INK.dust.map((star, i) => (
+              <circle
+                key={`dust-${i}`}
+                cx={star.x}
+                cy={star.y}
+                r={star.r}
+                opacity={star.opacity}
+                fill={star.warm ? '#ddbbad' : '#98b5c3'}
+              />
+            ))}
+            <path
+              d="M227 418H1163 M630 70V842"
+              stroke="#b9c5b6"
+              strokeWidth="1"
+              strokeDasharray="8 9"
+              opacity="0.22"
+            />
+            {[0, 1, 2, 3, 4].map((i) => (
+              <g key={i} transform={`translate(${630 - i * 80} 418)`}>
+                <path d="M0 -6V6" stroke="#c7d0bf" opacity="0.5" />
+                <text y="22" fill="#adb5a4" fontSize="12" textAnchor="middle">
+                  {i ? `${i * 10000}` : '0'}
+                </text>
+              </g>
+            ))}
+            {ATLAS_DISTRICTS.map((district) => {
+              const i = world.names.indexOf(district.anchor);
+              const lost = i >= 0 && state.phase[i] === 3;
+              return (
+                <g key={district.name} opacity={lost ? 0.36 : 0.8}>
+                  <path
+                    d={district.outline}
+                    fill={district.color}
+                    fillOpacity="0.035"
+                    stroke={district.color}
+                    strokeOpacity="0.55"
+                    strokeWidth="1"
+                    strokeDasharray={lost ? '5 7' : undefined}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {camera.k < 1.9 && (
+                    <text
+                      x={district.at[0]}
+                      y={district.at[1]}
+                      fill={district.color}
+                      fontSize="16"
+                      opacity="0.68"
+                      textAnchor="middle"
+                    >
+                      {district.name}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+            <path
+              d={IMPERIAL_BORDER}
+              fill="none"
+              stroke="#88b2c4"
+              strokeWidth="1.5"
+              strokeDasharray="10 8"
+              opacity="0.65"
+              vectorEffect="non-scaling-stroke"
+            />
+            <path
+              d={FOUNDATION_BORDER}
+              fill="none"
+              stroke="#cb9997"
+              strokeWidth="1.4"
+              strokeDasharray="6 8"
+              opacity="0.55"
+              vectorEffect="non-scaling-stroke"
+            />
+            <text x="255" y="220" fill="#879ea6" fontSize="17">
+              帝国旧疆
+            </text>
+            <text x="400" y="508" fill="#b69896" fontSize="16">
+              核心星域
+            </text>
+          </g>
           {network &&
             world.edges.map(([a, b]) => (
               <line
@@ -155,7 +287,7 @@ const AdministrativeMap = forwardRef<GalaxyHandle, Props>(function Administrativ
                 x2={positions[b][0]}
                 y2={positions[b][1]}
                 stroke={state.phase[a] === 3 || state.phase[b] === 3 ? '#c28b9a' : '#8bd3cf'}
-                strokeOpacity={state.phase[a] === 3 || state.phase[b] === 3 ? 0.2 : 0.5}
+                strokeOpacity={state.phase[a] === 3 || state.phase[b] === 3 ? 0.18 : 0.35}
                 strokeDasharray={state.phase[a] === 3 || state.phase[b] === 3 ? '4 5' : undefined}
                 vectorEffect="non-scaling-stroke"
                 pointerEvents="none"
@@ -198,14 +330,12 @@ const AdministrativeMap = forwardRef<GalaxyHandle, Props>(function Administrativ
                   }
                 }}
               >
-                <title>
-                  {sector.label} · {sector.status}
-                </title>
-                <circle r="17" fill="transparent" />
+                <title>{`${sector.label} · ${sector.status}`}</title>
+                <circle r={Math.min(32, 20 / Math.max(0.1, scale * camera.k))} fill="transparent" />
                 {(selected === i || sector.event) && (
                   <circle
                     className="atlas-halo"
-                    r={selected === i ? 15 : 11}
+                    r={(selected === i ? 10 : 8) * markerScale}
                     stroke={color}
                     strokeWidth="1.6"
                     fill="none"
@@ -213,29 +343,59 @@ const AdministrativeMap = forwardRef<GalaxyHandle, Props>(function Administrativ
                   />
                 )}
                 <circle
-                  r={i === world.capital ? 7 : 5}
+                  r={(i === world.capital ? 4.5 : 3.4) * markerScale}
                   fill={color}
                   stroke="#fff4d7"
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
-                {(selected === i || i === world.capital || i === world.terminus) && (
-                  <text
-                    y="-21"
-                    textAnchor="middle"
-                    fill="#fff6dd"
-                    stroke="#070c19"
-                    paintOrder="stroke"
-                    strokeWidth="4"
-                    fontSize="18"
-                  >
-                    {sector.label}
-                  </text>
-                )}
               </g>
             );
           })}
+          <g pointerEvents="none" className="atlas-labels">
+            {labels.map(({ i, dx, dy, font, anchor }) => (
+              <text
+                key={i}
+                x={positions[i][0] + dx}
+                y={positions[i][1] + dy}
+                textAnchor={anchor}
+                fontSize={font}
+                fill={
+                  selected === i || i === world.capital || i === world.terminus
+                    ? '#efe6cf'
+                    : '#c3ceca'
+                }
+                stroke="#0b1216"
+                strokeWidth={3 / (scale * camera.k)}
+                paintOrder="stroke"
+              >
+                {world.names[i]}
+              </text>
+            ))}
+          </g>
         </g>
+        {viewport.width >= 760 && (
+          <g className="atlas-cartouche" pointerEvents="none" aria-hidden="true">
+            <g transform="translate(52 785)" fill="#bdc9c0" fontSize="13">
+              <path d="M0 0H200 M0 -4V4 M100 -4V4 M200 -4V4" stroke="#bdc9c0" />
+              <text y="22">0</text>
+              <text x="78" y="22">
+                10,000
+              </text>
+              <text x="167" y="22">
+                20,000 光年
+              </text>
+              <path d="M0 51H26" stroke="#88b2c4" strokeDasharray="6 4" />
+              <text x="38" y="56">
+                帝国旧疆
+              </text>
+              <circle cx="180" cy="51" r="4" fill="#d0be82" />
+              <text x="193" y="56">
+                星区首府
+              </text>
+            </g>
+          </g>
+        )}
       </g>
     </svg>
   );

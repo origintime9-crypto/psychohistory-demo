@@ -43,6 +43,7 @@ export function galaxyArchive(world: World, params: Params, actions: Action[]): 
   const reality = stream(world.seed, 'reality');
   let state = initialState(world);
   if (params.strategic) state.strategic = initialStrategy(world);
+  if (params.evolving) state.decisions = { history: [] };
   if (params.campaign) state.chronicle = initialChronicle();
   const frames: ArchiveFrame[] = [{ state, events: [] }];
   for (const action of actions) {

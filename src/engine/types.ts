@@ -2,7 +2,24 @@ export type LegacyCardId =
   'academy' | 'religion' | 'elites' | 'tax' | 'reform' | 'foundation' | 'noop';
 export type CardId =
   LegacyCardId | 'relief' | 'convoy' | 'trade' | 'diplomacy' | 'intelligence' | 'evacuation';
-export type StoryChoiceId = 'aid' | 'bargain' | 'defer';
+export type StoryChoiceId = 'aid' | 'bargain' | 'defer' | 'improvise' | 'recall';
+export type Approach =
+  'care' | 'commerce' | 'accord' | 'force' | 'knowledge' | 'shadow' | 'restraint';
+export interface DecisionRecord {
+  turn: number;
+  event: string;
+  title: string;
+  target: number;
+  choice: StoryChoiceId;
+  label: string;
+  approach: Approach;
+  success: boolean;
+  due: number;
+  revisited?: number;
+}
+export interface DecisionState {
+  history: DecisionRecord[];
+}
 export type Action = { card: CardId; target?: number; eventChoice?: StoryChoiceId };
 export type Phase = 0 | 1 | 2 | 3;
 export type LegacyField = 'diplomacy' | 'trade' | 'secrecy';
@@ -31,6 +48,7 @@ export interface World {
 }
 export interface State {
   strategic?: StrategicState;
+  decisions?: DecisionState;
   turn: number;
   pressure: Float64Array;
   prosperity: Float64Array;
@@ -83,6 +101,7 @@ export interface StepResult {
     label: string;
     success: boolean;
     text: string;
+    echo?: DecisionRecord;
   };
 }
 export interface ForecastPoint {
@@ -188,6 +207,8 @@ export function cloneState(s: State): State {
     for (const k of STRATEGIC_KEYS) copy.strategic[k] = s.strategic[k].slice();
   }
   if (s.chronicle) copy.chronicle = { ...s.chronicle, resolved: { ...s.chronicle.resolved } };
+  if (s.decisions)
+    copy.decisions = { history: s.decisions.history.map((record) => ({ ...record })) };
   for (const k of ARRAY_KEYS) (copy[k] as Float64Array | Uint8Array) = s[k].slice();
   return copy;
 }

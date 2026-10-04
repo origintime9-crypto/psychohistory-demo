@@ -39,6 +39,8 @@ export interface Params {
   campaign?: boolean;
   strategic?: boolean;
   atlas?: boolean;
+  /** Choice memory and branching letters; absent preserves earlier campaign replays. */
+  evolving?: boolean;
 }
 /** All numerical magnitudes are game parameters, NOT coefficients fitted to real political data. */
 export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze({

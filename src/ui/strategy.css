@@ -558,6 +558,16 @@
   font-size: 11px;
   padding: 5px 6px;
 }
+.galaxy-readout small {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px 8px;
+}
+.galaxy-readout small > span {
+  white-space: nowrap;
+  letter-spacing: 0;
+}
 .administrative-map {
   position: absolute;
   inset: 0;

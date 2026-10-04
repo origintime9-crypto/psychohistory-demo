@@ -26,7 +26,7 @@ export function modelFingerprint(params: Params): string {
   return hashSeed(
     JSON.stringify({
       model: MODEL_VERSION,
-      protocol: `${params.strategic ? 'strategic-deck-v1/transport-v1/adaptive-events-v1' : 'weighted-deck-v2'}/fixed-5+9N/mule-stream-v3/${params.campaign ? 'story-v4-campaign' : 'story-v3'}/score-floor-0.1/turns-${TOTAL_TURNS}`,
+      protocol: `${params.strategic ? 'strategic-deck-v1/transport-v1/adaptive-events-v1' : 'weighted-deck-v2'}/fixed-5+9N/mule-stream-v3/${params.campaign ? 'story-v4-campaign' : 'story-v3'}/score-floor-0.1/turns-${TOTAL_TURNS}${params.evolving ? '/decision-memory-v1/branching-letters-v1' : ''}`,
       params,
       cards: params.strategic ? CARDS : LEGACY_CARDS,
     }),
@@ -93,8 +93,9 @@ export function restoreGame(raw: string): Game {
   if (
     Object.keys(s.params).length !==
       Object.keys(DEFAULT_PARAMS).length +
-        ['campaign', 'strategic', 'atlas'].filter((key) => Object.hasOwn(s.params, key)).length ||
-    ['campaign', 'strategic', 'atlas'].some(
+        ['campaign', 'strategic', 'atlas', 'evolving'].filter((key) => Object.hasOwn(s.params, key))
+          .length ||
+    ['campaign', 'strategic', 'atlas', 'evolving'].some(
       (key) => Object.hasOwn(s.params, key) && typeof s.params[key as keyof Params] !== 'boolean',
     ) ||
     Object.entries(DEFAULT_PARAMS).some(([key, defaultValue]) => {

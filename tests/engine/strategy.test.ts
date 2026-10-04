@@ -181,13 +181,13 @@ describe('事件算法与十年手记', () => {
         expect(value).toBeLessThanOrEqual(1);
       }
   });
-  it('手记约一千字，可重现，并与真正发生的独立和事件结果一致', () => {
+  it('手记一千五百至两千字，可重现，并与真正发生的独立和事件结果一致', () => {
     const { world, state } = fresh();
     const action: Action = { card: 'noop', eventChoice: 'defer' };
     const result = step(world, state, action, stream(world.seed, 'reality'), params);
     const chapter = decadeChapter(world, state, action, result);
-    expect(chapter.paragraphs.join('').length).toBeGreaterThanOrEqual(900);
-    expect(chapter.paragraphs.join('').length).toBeLessThanOrEqual(1400);
+    expect(chapter.paragraphs.join('').length).toBeGreaterThanOrEqual(1500);
+    expect(chapter.paragraphs.join('').length).toBeLessThan(2000);
     expect(chapter).toEqual(decadeChapter(world, state, action, result));
     expect(chapter.paragraphs.join('')).toContain(result.story!.label);
     for (const event of result.events.filter((e) => e.to === 3).slice(0, 3))
@@ -211,7 +211,7 @@ describe('事件算法与十年手记', () => {
     const prediction = forecast(session.world, session.state, game.action, {
       M: 8,
       H: 1,
-      params,
+      params: session.params,
       seed: 'narrative-flow-preview',
     });
     const request = { type: 'ADVANCE' as const, turn: 0, forecast: prediction };
@@ -232,7 +232,7 @@ describe('事件算法与十年手记', () => {
     const readRestored = restoreGame(serializeGame(read)!);
     expect(readRestored.status).toBe('playing');
     expect(readRestored.reveal).toBeNull();
-    const frames = galaxyArchive(session.world, params, game.session!.actions);
+    const frames = galaxyArchive(session.world, session.params, game.session!.actions);
     expect(frames.at(-1)!.state).toEqual(game.session!.state);
   });
   it('新版配对预测可以自比较为零，且不会改变当前状态', () => {
@@ -325,8 +325,8 @@ describe('事件算法与十年手记', () => {
       const result = step(world, state, action, rng, params);
       const streamSnapshot = rng.clone();
       const chapter = decadeChapter(world, state, action, result);
-      expect(chapter.paragraphs.join('').length).toBeGreaterThanOrEqual(900);
-      expect(chapter.paragraphs.join('').length).toBeLessThanOrEqual(1400);
+      expect(chapter.paragraphs.join('').length).toBeGreaterThanOrEqual(1500);
+      expect(chapter.paragraphs.join('').length).toBeLessThan(2000);
       expect(chapter.paragraphs.join('')).not.toMatch(/背景图|查看插画|影响力 [+-]/);
       if (turn === 29) expect(chapter.paragraphs.join('')).toContain('第三百年');
       expect(rng.clone().uniform()).toBe(streamSnapshot.uniform());

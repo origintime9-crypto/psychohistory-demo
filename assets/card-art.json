@@ -2,9 +2,9 @@
   "generator": "Built-in imagegen",
   "format": "WebP, 1536 x 1024, encoded at quality 82 from separate generated PNG originals",
   "map": {
-    "path": "public/maps/galactic-administration-reference.jpg",
-    "source": "User-supplied photograph, unchanged; runtime viewport crops to the printed map",
-    "rights": "Confirm permission for the photograph and underlying map before public release",
+    "path": "src/ui/atlasDrawing.ts",
+    "source": "Redrawn interactive vector chart inspired by the user-supplied reference: procedural galaxy, traced approximate districts, independently rendered labels and live routes. No reference photograph is served or displayed.",
+    "rights": "Reference used for a fictional game adaptation; the original photograph stays outside the deployed website. Confirm rights for the underlying fictional setting and map-derived arrangement before commercial release.",
     "coordinates": "Approximate playable anchors reconstructed from the photograph, not exact astronomical coordinates"
   },
   "cards": [

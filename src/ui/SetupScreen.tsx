@@ -3,6 +3,10 @@ import { TOTAL_TURNS } from '../engine/params';
 import GalaxyScene from './GalaxyScene';
 import IntroSequence from './IntroSequence';
 import BookArchive from './BookArchive';
+import { Dices } from 'lucide-react';
+
+const newSeed = () =>
+  `SELDON-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36).toUpperCase()}`;
 export default function SetupScreen({
   onStart,
   onReplayIntro,
@@ -14,7 +18,7 @@ export default function SetupScreen({
   intro: boolean;
   onFinishIntro: () => void;
 }) {
-  const [seed, setSeed] = useState('SELDON-12067');
+  const [seed, setSeed] = useState(newSeed);
   const [n, setN] = useState(50);
   const [mule, setMule] = useState(false);
   if (intro) return <IntroSequence onComplete={onFinishIntro} />;
@@ -68,7 +72,7 @@ export default function SetupScreen({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onStart(seed.trim() || 'SELDON-12067', n, mule);
+            onStart(seed.trim() || newSeed(), n, mule);
           }}
         >
           <label className="input-label" htmlFor="seed">
@@ -87,9 +91,9 @@ export default function SetupScreen({
               className="icon-button"
               title="生成新种子"
               aria-label="生成新种子"
-              onClick={() => setSeed(`SELDON-${Math.floor(Math.random() * 1000000)}`)}
+              onClick={() => setSeed(newSeed())}
             >
-              ↻
+              <Dices size={18} />
             </button>
           </div>
           <fieldset className="size-choice">

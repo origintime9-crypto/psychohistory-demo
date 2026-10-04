@@ -197,13 +197,15 @@ export default function StarMap(props: Props) {
     >
       <div className="panel-heading galaxy-heading">
         <div>
-          <div className="eyebrow">GALACTIC ATLAS / 银河全息星图</div>
+          <div className="eyebrow">GALACTIC ATLAS / 帝国与基地</div>
           <h2>
             {archived
               ? '回望已经发生的历史'
               : targeting
                 ? '选择你的干预坐标'
-                : '群星之中，寻找文明的下一步'}
+                : mapMode === 'atlas'
+                  ? '银河帝国行政图'
+                  : '银河全息星图'}
           </h2>
         </div>
         <div className="galaxy-view-actions">
@@ -386,7 +388,9 @@ export default function StarMap(props: Props) {
             <i>GE</i>
           </strong>
           <small>
-            {c.stable} 稳定 / {c.crisis} 危机 / {c.independent} 独立
+            <span>{c.stable} 稳定</span>
+            <span>{c.crisis} 危机</span>
+            <span>{c.independent} 独立</span>
           </small>
         </div>
         {feedOpen && (
